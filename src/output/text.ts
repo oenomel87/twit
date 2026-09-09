@@ -46,7 +46,7 @@ export function renderThreadList(rows: MessageRow[], viewerId: string): string {
   return rows
     .map((row) => {
       const replyTo = row.reply_to_id ?? '-'
-      return `${row.id}  ${row.sender_id} → ${row.recipient_id}  ${row.created_at}  reply:${replyTo}  ${readMark(row, viewerId, '-')}  ${row.body.length}`
+      return `${row.id}  ${row.sender_id} → ${row.recipient_id}  ${row.created_at}  reply:${replyTo}  ${readMark(row, viewerId, '-')}  ${[...row.body].length}`
     })
     .join('\n')
 }

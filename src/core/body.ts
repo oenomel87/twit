@@ -11,7 +11,11 @@ export async function loadBody(input: BodyInput): Promise<string> {
     throw new TwitError('VALIDATION_ERROR', '--body와 --body-file 중 하나만 지정할 수 있습니다.')
   }
   if (input.bodyFile !== undefined) {
-    if (input.bodyFile === '-') return readStdin()
+    if (input.bodyFile === '-') {
+      const content = await readStdin()
+      assertNotBlank(content)
+      return content
+    }
     let content: string
     try {
       content = await fsPromises.readFile(input.bodyFile, 'utf8')

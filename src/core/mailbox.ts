@@ -1,4 +1,4 @@
-import type { Database, Transaction } from 'better-sqlite3'
+import type { Database } from 'better-sqlite3'
 import { TwitError } from './errors.js'
 import { assertNotBlank, loadBody } from './body.js'
 import type { ContactRow } from './context.js'
@@ -117,18 +117,7 @@ export async function sendMessage(
     }
     return { message: getMessage(db, id) as MessageRow, replayed: false }
   })
-  return commit(apply)
-}
-
-function commit(apply: Transaction<() => SendResult>): SendResult {
-  try {
-    return apply.immediate()
-  } catch (err) {
-    if (err instanceof TwitError) throw err
-    throw new TwitError('STORAGE_ERROR', `데이터베이스 저장에 실패했습니다: ${err instanceof Error ? err.message : String(err)}`, {
-      cause: err instanceof Error ? err.name : String(err),
-    })
-  }
+  return apply.immediate()
 }
 
 export interface ReadResult {
@@ -213,7 +202,7 @@ export async function replyMessage(
     }
     return { message: getMessage(db, id) as MessageRow, replayed: false }
   })
-  return commit(apply)
+  return apply.immediate()
 }
 
 export function setArchived(

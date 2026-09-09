@@ -14,7 +14,7 @@
 | 4단계 | `core/idempotency.ts`, `send`·`reply`의 `--request-id` | 테스트 26개 추가. `idempotency`·`atomicity`·`concurrency`·`persistence`·`fs-boundary` |
 | 5단계 | [05-agent-usage-guide.md](./05-agent-usage-guide.md), `test/docs.test.ts`, README 색인·03 체크박스 갱신 | 테스트 9개 추가. 전체 흐름(요청 → 질문 → 답변 → 결과 → 보관) 수동 확인 |
 
-최종 상태: 테스트 87개 통과(`vitest`), `tsc` 빌드 경고 없음, `npm link`로 `twit` 명령 등록 완료.
+최종 상태: 테스트 92개 통과(`vitest`, §5의 구현 후 수정 포함), `tsc` 빌드 경고 없음, `npm link`로 `twit` 명령 등록 완료.
 
 ## 2. 구현 중 특이 사항
 
@@ -81,7 +81,6 @@
 | 미사용 `--json` 오류 대상 | 파서 오류 포함(2.5 참조) |
 
 ## 4. 검증 기록
-
 ### 4.1 자동 테스트
 
 ```sh
@@ -106,3 +105,15 @@ npm run build   # tsc 오류 없음
 ### 4.3 남은 항목
 
 03 문서 10장의 마지막 체크박스 하나가 남아 있다: 서로 다른 두 에이전트 CLI에 `TWIT_ACTOR`와 세션 규칙을 적용하고 요청 → 질문 → 답변 → 결과 흐름을 실제로 수행하는 것. 수행 결과는 [05-agent-usage-guide.md](./05-agent-usage-guide.md)의 "10. 수동 연동 검증 기록"에 기록한다.
+
+## 5. 구현 후 수정(2026-09-09)
+
+첫 구현 커밋 이후 발견해 고친 결함과 불일치다. 각 항목은 회귀 테스트를 함께 추가했다(최종 92개).
+
+| 구분 | 내용 | 수정 | 검증 |
+|---|---|---|---|
+| 결함 | 파이프 출력이 64KB에서 잘림 | `bin/twit.js`가 `process.exit(code)`로 마쳐 대기 중인 stdout 쓰기가 버려졌다. `process.exitCode = code`로 바꿔 이벤트 루프가 스트림을 비운 뒤 끝나게 했다. 상대가 먼저 닫은 파이프(EPIPE)는 정상 종료로 처리 | 100KB 본문 전송 뒤 `read --json \| wc -c`로 300,422바이트 온전 확인, 회귀 테스트 |
+| 결함 | 표준 입력(`--body-file -`) 본문이 공백 검사를 건너뜀 | `body.ts`가 stdin 경로에서 `assertNotBlank`를 빠뜨렸다. 공백만 있으면 `VALIDATION_ERROR`(2)로 거절 | 실제 프로세스로 stdin 공백/정상 케이스 테스트 |
+| 불일치 | `body_length`가 UTF-16 코드 단위 수(이모지 2개 = 4) | 03 문서 5.5의 "문자 수"대로 코드 포인트 수로 계산(`[...body].length`). `thread --no-body` 텍스트 출력도 함께 수정 | 이모지 본문 `body_length: 2` 확인, 회귀 테스트 |
+| 불일치 | `read`·`archive`·`unarchive`의 UPDATE에서 나는 SQLite 오류가 내부 오류(1)로 나감 | 04 문서 7장의 규칙(SQLite 오류 → `STORAGE_ERROR`, 6)을 `withDb`에서 일원 적용. send/reply의 개별 래핑은 제거해 규칙을 한 곳에 둠 | receipts 갱신을 ABORT하는 트리거로 세 명령 모두 종료 코드 6 확인, 회귀 테스트 |
+| 불일치 | `thread`의 `participants`가 조회에 쓴 메시지의 발신자·수신자 순서를 따름 | 답장 ID로 조회하면 순서가 뒤집혔다. 대화의 최초 메시지(`rows[0]`) 기준으로 고정 | M-002(답장)로 조회해도 최초 메시지 순서 유지, 회귀 테스트 |

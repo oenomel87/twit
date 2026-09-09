@@ -57,6 +57,48 @@ describe('프로세스 종료 후 영속성', () => {
   })
 })
 
+describe('프로세스 출력 경계', () => {
+  it('64KB를 넘는 출력도 파이프에서 온전히 나간다', async () => {
+    await setup()
+    const largeBody = '가'.repeat(100_000) // UTF-8로 약 300KB
+    const sent = cli(['send', '--to', 'codex-1', '--subject', '큰 본문', '--body', largeBody, '--json'], 'dane')
+    expect(sent.code).toBe(0)
+
+    // 실제 파이프(`| wc -c`)로 자식 프로세스 stdout을 받아 본다
+    const home = testHome()
+    const env = { ...process.env, TWIT_HOME: home, TWIT_ACTOR: 'codex-1' }
+    const piped = spawnSync(
+      'sh',
+      ['-c', `"${process.execPath}" "${CLI_PATH}" read M-001 --json | wc -c`],
+      { env, encoding: 'utf8', shell: false },
+    )
+    expect(piped.status).toBe(0)
+    // 봉투·필드 전체를 담으려면 100KB 이상이어야 한다. 잘리면 이보다 작다.
+    expect(Number(piped.stdout.trim())).toBeGreaterThan(300_000)
+  })
+
+  it('표준 입력 본문도 공백 검사를 거친다', async () => {
+    await setup()
+    const env = { ...process.env, TWIT_HOME: testHome(), TWIT_ACTOR: 'dane' }
+    const blank = spawnSync(process.execPath, [CLI_PATH, 'send', '--to', 'codex-1', '--subject', 's', '--body-file', '-', '--json'], {
+      env,
+      input: '   \n  ',
+      encoding: 'utf8',
+    })
+    expect(blank.status).toBe(2)
+    expect(blank.stdout).toContain('VALIDATION_ERROR')
+
+    const ok = spawnSync(process.execPath, [CLI_PATH, 'send', '--to', 'codex-1', '--subject', 's', '--body-file', '-', '--json'], {
+      env,
+      input: 'stdin 본문',
+      encoding: 'utf8',
+    })
+    expect(ok.status).toBe(0)
+    const read = cli(['read', 'M-001', '--json'], 'codex-1')
+    expect(JSON.parse(read.stdout).data.message.body).toBe('stdin 본문')
+  })
+})
+
 describe('파일 접근 경계', () => {
   it('src 코드에서 fs 접근은 body.ts와 db.ts뿐이다', async () => {
     const { readdirSync, readFileSync, statSync } = await import('node:fs')

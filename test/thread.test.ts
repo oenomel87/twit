@@ -38,6 +38,26 @@ describe('thread', () => {
     expect(messages[0].body_length).toBe('첫 본문'.length)
   })
 
+  it('--no-body의 body_length는 문자 수(코드 포인트)다', async () => {
+    await setup()
+    expect(
+      (await run('dane', ['send', '--to', 'codex-1', '--subject', '이모지', '--body', '👍👍', '--json'])).code,
+    ).toBe(0)
+    const r = await run('codex-1', ['thread', 'M-001', '--no-body', '--json'])
+    const messages = r.json?.data?.messages as Record<string, unknown>[]
+    expect(messages[0].body_length).toBe(2) // UTF-16 코드 단위라면 4다
+  })
+
+  it('participants는 조회에 쓴 메시지가 아니라 대화의 최초 메시지를 따른다', async () => {
+    await seedThread()
+    // M-002(codex-1 → dane)로 조회해도 순서는 최초 메시지(M-001: dane → codex-1) 기준이다
+    const viaReply = await run('dane', ['thread', 'M-002', '--json'])
+    expect(viaReply.code).toBe(0)
+    expect(viaReply.json?.data?.participants).toEqual(['dane', 'codex-1'])
+    const viaOrigin = await run('codex-1', ['thread', 'M-001', '--json'])
+    expect(viaOrigin.json?.data?.participants).toEqual(['dane', 'codex-1'])
+  })
+
   it('조회가 읽음 상태를 바꾸지 않는다', async () => {
     await seedThread()
     await run('codex-1', ['read', 'M-001'])

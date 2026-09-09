@@ -38,13 +38,15 @@ export function registerThreadCommand(program: Command, io: CliIo): void {
             })
           }
           const rows = threadMessages(db, start.thread_id)
+          // participants는 조회에 쓴 메시지가 아니라 대화의 최초 메시지를 따른다.
+          const origin = rows[0] ?? start
           const messages = opts.body
             ? rows.map((row) => toMessage(row, actor.id))
             : rows.map((row) => toSummary(row, actor.id))
           emitSuccess(
             io,
             g,
-            { thread_id: start.thread_id, participants: [start.sender_id, start.recipient_id], messages },
+            { thread_id: start.thread_id, participants: [origin.sender_id, origin.recipient_id], messages },
             () => (opts.body ? renderThread(rows) : renderThreadList(rows, actor.id)),
           )
         }),

@@ -63,7 +63,7 @@ export function toSummary(row: MessageRow, viewerId: string): Record<string, unk
     created_at: row.created_at,
     read: isRecipient ? row.read_at !== null : null,
     archived: isRecipient ? row.archived === 1 : null,
-    body_length: row.body.length,
+    body_length: [...row.body].length,
   }
 }
 

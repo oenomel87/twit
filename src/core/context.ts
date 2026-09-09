@@ -4,7 +4,6 @@ import type { Database } from 'better-sqlite3'
 import { openDatabase } from '../store/db.js'
 import { TwitError } from './errors.js'
 import type { CliIo } from './io.js'
-
 export type Env = Record<string, string | undefined>
 
 export interface ContactRow {
@@ -55,6 +54,15 @@ export async function withDb<T>(
   const ctx = loadContext(io.env)
   try {
     return await handler(ctx.db)
+  } catch (err) {
+    // 04 문서 7장: SQLite 오류는 STORAGE_ERROR(종료 코드 6)로 나간다.
+    if (err instanceof TwitError) throw err
+    if (err instanceof Error && err.name === 'SqliteError') {
+      throw new TwitError('STORAGE_ERROR', `데이터베이스 작업에 실패했습니다: ${err.message}`, {
+        cause: err.message,
+      })
+    }
+    throw err
   } finally {
     closeContext(ctx)
   }
