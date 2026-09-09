@@ -14,7 +14,7 @@
 | 호출자 | 전역 옵션 `--actor <id>`, 없으면 환경변수 `TWIT_ACTOR` |
 | CLI 파서 | `commander` |
 | 테스트 | `vitest` |
-| 설치 | `npm install && npm run build && npm link` 로 `twit` 명령 등록 |
+| 설치 | `npm install && npm run build && npm link` 로 `twit` 명령 등록. 진입점은 `bin/twit.js`이므로 실행에는 항상 사전 빌드가 필요하다. `prepare` 스크립트가 `npm link`·`npm install` 때 빌드를 실행한다 |
 | 시각 | ISO 8601 UTC, 밀리초 포함 |
 | 대화 ID | 별도 발급하지 않고 최초 메시지 ID를 사용. 최초 메시지는 `thread_id == id` |
 | 메시지 ID | `M-001` 형식. 자동 증가 정수 `seq`에서 유도하며 세 자리 이상 0 채움 |
@@ -25,7 +25,9 @@
 
 ```text
 twit/
-  package.json              "bin": { "twit": "./dist/main.js" }, "type": "module"
+  package.json              "bin": { "twit": "./bin/twit.js" }, "type": "module"
+  bin/
+    twit.js                 실행 진입점. dist/main.js의 runCli를 호출한다
   tsconfig.json
   src/
     main.ts                 commander 루트, 전역 옵션, 종료 코드 매핑, 오류 출력
