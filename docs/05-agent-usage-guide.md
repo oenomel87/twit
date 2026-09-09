@@ -46,6 +46,13 @@ twit contacts               # 등록된 참여자와 표시 이름 확인
 
 호출자가 설정되지 않았거나 등록된 참여자가 아니면 모든 명령은 `ACTOR_NOT_CONFIGURED`(종료 코드 8)로 거절된다. 오타로 새 인박스가 만들어지지 않도록, 수신자도 `contacts add`로 등록된 참여자여야 한다.
 
+참여자가 하나도 없는 빈 홈이라면 첫 참여자부터 등록한다. `contacts add`만 호출자 없이 실행할 수 있다.
+
+```sh
+twit contacts add dane --name Dane          # 첫 참여자. 호출자가 없어도 된다
+TWIT_ACTOR=dane twit contacts add codex-1 --name "Codex 1"   # 이후에는 호출자와 함께
+```
+
 ## 3. 세션 규칙
 
 세션을 시작할 때와 작업을 마치기 전에 `twit inbox --json`을 실행한다.
@@ -138,4 +145,25 @@ twit read M-004 --json
 
 실제 서로 다른 두 CLI 에이전트의 요청 → 질문 → 답변 → 결과 전달 검증을 아래에 기록한다.
 
-- (검증 예정)
+### 1차 왕복 (2026-09-09): 요청 → 결과
+
+참여자: `claude-1`(Claude Code, Fable 5.1), `opencode-1`(OpenCode). 사람(`dane`)이 각 세션에 조회를 지시했고, twit은 어느 쪽도 깨우지 않았다.
+
+| 순서 | 호출자 | 명령 | 결과 |
+|---|---|---|---|
+| 0 | 없음 → `dane` | `twit contacts add dane`, 이어서 `dane` 권한으로 `claude-1`, `opencode-1` 등록 | 빈 메일함 부트스트랩 |
+| 1 | `claude-1` | `twit send --to opencode-1 --subject "twit v2 수정 커밋 44ce485 리뷰 결과" --body-file review.md --request-id claude-review-44ce485 --json` | M-001, 본문 1,501자 |
+| 2 | `opencode-1` | `twit inbox --json` → `twit read M-001` | 세션 시작 규칙대로 조회 후 본문 확인 |
+| 3 | `opencode-1` | 수정 요청 반영(커밋 be5998c) → `twit reply M-001 ...` | M-002, 답장 대상 M-001, 대화 M-001 |
+| 4 | `claude-1` | `twit inbox` → `twit thread M-001 --no-body` → `twit read M-002` | M-002가 `*`로 표시, 대화 목록에서 답장 위치 확인 후 본문 읽음 |
+| 5 | `claude-1` | 커밋 be5998c와 `npm test` 92개 통과를 직접 확인 → `twit archive M-002` | 처리 완료 후 인박스 비움 |
+
+확인된 사항:
+
+- 서로 다른 두 CLI 에이전트가 twit 명령만으로 요청과 결과를 주고받았다. 상대 CLI를 호출하거나 프로세스를 실행한 단계는 없다.
+- 답장이 원문의 제목과 대화 ID를 유지하고 수신자 인박스에 읽지 않음으로 들어갔다.
+- `--request-id`를 붙인 전송이 `replayed: false`로 저장됐다.
+
+미검증: 질문 → 답변 구간. 1차 왕복에서는 수신자(OpenCode)에게 질문이 없었다. 2차 왕복에서 질문과 답변을 포함해 검증한 뒤 03 문서 10장의 마지막 체크박스를 채운다.
+
+첫 사용자 관찰: 빈 메일함에서 `twit contacts`를 먼저 실행하면 종료 코드 8이 난다. 오류 메시지가 설정 방법을 안내하므로 막히지는 않지만, 2장에 "첫 등록은 호출자 없이 `contacts add`부터"라는 안내가 있으면 첫 사용자가 덜 헤맨다. 이 점은 2차 왕복에서 OpenCode에게 질문으로 보냈다.

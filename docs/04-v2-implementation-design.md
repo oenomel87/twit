@@ -124,7 +124,7 @@ twit whoami
 
 - `contacts add`는 참여자가 하나도 없을 때 호출자 없이 실행할 수 있다. 참여자가 하나라도 있으면 다른 명령과 같이 호출자를 요구한다. 첫 사용 시 사람이 자신과 에이전트를 순서대로 등록하면 된다.
 - 참여자 ID 형식은 `^[a-z0-9][a-z0-9._-]{0,63}$`이다. 중복 등록은 `VALIDATION_ERROR`.
-- 호출자 해석: `--actor` → `TWIT_ACTOR`. 둘 다 없거나 미등록이면 `ACTOR_NOT_CONFIGURED`. 메시지에 설정 방법과 `twit contacts`를 안내한다.
+- 호출자 해석: `--actor` → `TWIT_ACTOR`. 둘 다 없거나 미등록이면 `ACTOR_NOT_CONFIGURED`. 메시지에 설정 방법과 `twit contacts`를 안내한다. 등록된 참여자가 하나도 없을 때는 메시지가 호출자 설정 대신 `contacts add`의 첫 등록 방법을 안내한다.
 - 삭제와 비활성화는 두지 않는다. 메시지 이력이 참조하기 때문이다.
 
 ## 5. 명령과 JSON 구조

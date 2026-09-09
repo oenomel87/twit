@@ -85,13 +85,16 @@ export function resolveActor(
 export function requireActor(ctx: Context, options: GlobalOptions, env: Env): ContactRow {
   const { actor, requestedId } = resolveActor(ctx, options, env)
   if (!actor) {
-    throw new TwitError(
-      'ACTOR_NOT_CONFIGURED',
-      '호출자가 설정되어 있지 않거나 등록된 참여자가 아닙니다. --actor <id> 옵션 또는 TWIT_ACTOR 환경변수로 호출자를 지정하고, twit contacts로 등록된 참여자를 확인할 수 있습니다.',
-      { actor: requestedId },
-    )
+    throw new TwitError('ACTOR_NOT_CONFIGURED', actorNotConfiguredMessage(ctx), { actor: requestedId })
   }
   return actor
+}
+
+function actorNotConfiguredMessage(ctx: Context): string {
+  if (countContacts(ctx) === 0) {
+    return '등록된 참여자가 없습니다. 첫 참여자는 호출자 없이 twit contacts add <id> --name <이름>으로 등록할 수 있습니다. 이후에는 --actor <id> 옵션이나 TWIT_ACTOR 환경변수로 호출자를 지정합니다.'
+  }
+  return '호출자가 설정되어 있지 않거나 등록된 참여자가 아닙니다. --actor <id> 옵션 또는 TWIT_ACTOR 환경변수로 호출자를 지정하고, twit contacts로 등록된 참여자를 확인할 수 있습니다.'
 }
 
 export function countContacts(ctx: Context): number {

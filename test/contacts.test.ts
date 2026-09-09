@@ -127,6 +127,22 @@ describe('whoami', () => {
     expect(unknown.code).toBe(8)
     expect(unknown.json?.error?.code).toBe('ACTOR_NOT_CONFIGURED')
   })
+
+  it('참여자가 하나도 없으면 오류 메시지가 첫 등록 방법을 안내한다', async () => {
+    const r = await run(null, ['whoami', '--json'])
+    expect(r.code).toBe(8)
+    expect(r.json?.error?.message).toContain('twit contacts add')
+    expect(r.json?.error?.message).not.toContain('TWIT_ACTOR 환경변수로 호출자를 지정하고')
+  })
+
+  it('참여자가 있으면 오류 메시지가 호출자 설정 방법을 안내한다', async () => {
+    await setup()
+    const r = await run('ghost', ['whoami', '--json'])
+    expect(r.code).toBe(8)
+    expect(r.json?.error?.message).toContain('--actor <id>')
+    expect(r.json?.error?.message).toContain('TWIT_ACTOR')
+    expect(r.json?.error?.message).not.toContain('호출자 없이')
+  })
 })
 
 describe('출력 규약', () => {
