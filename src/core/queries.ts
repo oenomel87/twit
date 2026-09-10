@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { preview } from './preview.js'
 import type { MessageRow } from './mailbox.js'
 
 export type InboxFilter = 'default' | 'unread' | 'archived' | 'all'
@@ -51,7 +52,8 @@ export function threadMessages(db: DatabaseSync, threadId: string): MessageRow[]
     .all(threadId) as unknown as MessageRow[]
 }
 
-export function toSummary(row: MessageRow, as: string): Record<string, unknown> {
+/** 모든 응답에 공통인 메타데이터. 목록·본문 응답의 공통 부분이다. */
+export function toMeta(row: MessageRow, as: string): Record<string, unknown> {
   const isRecipient = row.recipient_id === as
   return {
     id: row.id,
@@ -67,6 +69,12 @@ export function toSummary(row: MessageRow, as: string): Record<string, unknown> 
   }
 }
 
+/** 목록(inbox, sent, thread --no-body)의 항목. 본문 대신 미리보기를 담는다. */
+export function toSummary(row: MessageRow, as: string): Record<string, unknown> {
+  return { ...toMeta(row, as), preview: preview(row.body) }
+}
+
+/** 본문을 돌려주는 응답(read, send, reply, thread)의 항목. preview는 없다. */
 export function toMessage(row: MessageRow, as: string): Record<string, unknown> {
-  return { ...toSummary(row, as), body: row.body }
+  return { ...toMeta(row, as), body: row.body }
 }

@@ -55,19 +55,33 @@ describe('inbox', () => {
     expect((r.json?.data?.messages as unknown[]).length).toBe(0)
   })
 
-  it('텍스트 목록에 미읽음 표시와 제목이 나온다', async () => {
+  it('텍스트 목록은 미리보기를 둘째 줄에 들여써서 표시한다', async () => {
     await sendTwo()
     await run(['read', 'M-001', '--as', 'codex'])
     const r = await run(['inbox', '--as', 'codex'])
     expect(r.code).toBe(0)
     const lines = r.stdout.trimEnd().split('\n')
-    expect(lines).toHaveLength(2)
+    expect(lines).toHaveLength(4)
     expect(lines[0]).toContain('M-002')
     expect(lines[0]).toContain('*')
     expect(lines[0]).toContain('둘째')
     expect(lines[0]).toContain('claude')
-    expect(lines[1]).toContain('M-001')
-    expect(lines[1].split('*').length - 1).toBe(0)
+    expect(lines[1]).toBe('  b2')
+    expect(lines[2]).toContain('M-001')
+    expect(lines[2].split('*').length - 1).toBe(0)
+    expect(lines[3]).toBe('  b1')
+  })
+
+  it('미리보기는 공백이 아닌 첫 줄이고 본문 응답에는 없다', async () => {
+    await run(['send', '--from', 'claude', '--to', 'codex', '--subject', '미리보기', '--body', '\n\n   첫 유효 줄\n둘째', '--json'])
+    const inbox = await run(['inbox', '--as', 'codex', '--json'])
+    const summary = (inbox.json?.data?.messages as Record<string, unknown>[])[0]
+    expect(summary.preview).toBe('첫 유효 줄')
+
+    const read = await run(['read', 'M-001', '--as', 'codex', '--json'])
+    const message = read.json?.data?.message as Record<string, unknown>
+    expect(message.body).toBe('\n\n   첫 유효 줄\n둘째')
+    expect(message).not.toHaveProperty('preview')
   })
 })
 
@@ -81,6 +95,7 @@ describe('sent', () => {
     expect(messages[0].read).toBeNull()
     expect(messages[0].archived).toBeNull()
     expect(messages[0]).not.toHaveProperty('body')
+    expect(messages[0].preview).toBe('b2')
   })
 
   it('받지 않은 사람의 sent는 비어 있다', async () => {

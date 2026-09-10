@@ -33,6 +33,7 @@ describe('thread', () => {
     for (const m of messages) {
       expect(m).not.toHaveProperty('body')
       expect(typeof m.body_length).toBe('number')
+      expect(m.preview).toBe((m.id === 'M-001' && '첫 본문') || (m.id === 'M-002' && '둘째 본문') || '셋째 본문')
     }
     expect(messages[0].body_length).toBe('첫 본문'.length)
   })
@@ -87,14 +88,15 @@ describe('thread', () => {
     expect(forbidden.json?.error?.code).toBe('FORBIDDEN')
   })
 
-  it('텍스트 모드 --no-body는 방향과 길이를 한 줄에 표시한다', async () => {
+  it('텍스트 모드 --no-body는 방향과 길이, 들여쓴 미리보기를 표시한다', async () => {
     await seedThread()
     const r = await run(['thread', 'M-001', '--as', 'codex', '--no-body'])
     expect(r.code).toBe(0)
     const lines = r.stdout.trimEnd().split('\n')
-    expect(lines).toHaveLength(3)
+    expect(lines).toHaveLength(6)
     expect(lines[0]).toContain('M-001')
     expect(lines[0]).toContain('→')
     expect(lines[0]).toContain('첫 본문'.length.toString())
+    expect(lines[1]).toBe('  첫 본문')
   })
 })
