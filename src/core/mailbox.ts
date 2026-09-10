@@ -110,32 +110,55 @@ export async function sendMessage(db: DatabaseSync, input: SendInput): Promise<S
   })
 }
 
-export interface ReadResult {
+export interface ReadResultItem {
   message: MessageRow
   marked_read: boolean
 }
 
-export function readMessage(db: DatabaseSync, as: string, id: string): ReadResult {
-  return immediate(db, (): ReadResult => {
-    const row = getMessage(db, id)
-    if (!row) {
-      throw new TwitError('NOT_FOUND', `메시지를 찾을 수 없습니다: ${id}`, { id })
-    }
-    if (row.sender_id !== as && row.recipient_id !== as) {
-      throw new TwitError('FORBIDDEN', '발신자나 수신자만 이 메시지를 읽을 수 있습니다.', {
-        id,
-        as,
-      })
-    }
-    let markedRead = false
-    if (row.recipient_id === as) {
-      const result = db
-        .prepare('UPDATE receipts SET read_at = ? WHERE message_id = ? AND read_at IS NULL')
-        .run(new Date().toISOString(), id)
-      markedRead = Number(result.changes) === 1
-    }
-    return { message: getMessage(db, id) as unknown as MessageRow, marked_read: markedRead }
+/**
+ * 여러 메시지를 트랜잭션 하나로 읽는다. 존재·권한 검사와 읽음 갱신이 모두
+ * 같은 트랜잭션 안에 있으므로 하나라도 실패하면 아무것도 읽음 처리되지 않는다.
+ */
+export function readMessages(db: DatabaseSync, as: string, ids: string[]): ReadResultItem[] {
+  return immediate(db, (): ReadResultItem[] => {
+    const rows = ids.map((id) => {
+      const row = getMessage(db, id)
+      if (!row) {
+        throw new TwitError('NOT_FOUND', `메시지를 찾을 수 없습니다: ${id}`, { id })
+      }
+      if (row.sender_id !== as && row.recipient_id !== as) {
+        throw new TwitError('FORBIDDEN', '발신자나 수신자만 이 메시지를 읽을 수 있습니다.', {
+          id,
+          as,
+        })
+      }
+      return row
+    })
+    return rows.map((row) => {
+      let markedRead = false
+      if (row.recipient_id === as) {
+        const result = db
+          .prepare('UPDATE receipts SET read_at = ? WHERE message_id = ? AND read_at IS NULL')
+          .run(new Date().toISOString(), row.id)
+        markedRead = Number(result.changes) === 1
+      }
+      return { message: getMessage(db, row.id) as unknown as MessageRow, marked_read: markedRead }
+    })
   })
+}
+
+/** --unread의 대상. 보관하지 않은 읽지 않은 메시지를 오래된 순서로 고른다. */
+export function unreadIds(db: DatabaseSync, as: string): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT m.id FROM messages m
+       LEFT JOIN receipts r ON r.message_id = m.id
+       WHERE m.recipient_id = ? AND r.archived = 0 AND r.read_at IS NULL
+       ORDER BY m.seq ASC`,
+      )
+      .all(as) as unknown as { id: string }[]
+  ).map((row) => row.id)
 }
 
 export interface ReplyInput {

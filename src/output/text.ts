@@ -44,6 +44,8 @@ export function renderMessageDetail(row: MessageRow): string {
 
 const SEPARATOR = '-'.repeat(48)
 
+export { SEPARATOR }
+
 export function renderThread(rows: MessageRow[]): string {
   return rows.map((row) => renderMessageDetail(row)).join(`\n${SEPARATOR}\n`)
 }

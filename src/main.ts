@@ -4,7 +4,8 @@ import type { CliIo } from './core/io.js'
 import { reportError, ReportedError } from './core/report.js'
 import { errorEnvelope } from './output/json.js'
 import { registerContactsCommand } from './commands/contacts.js'
-import { registerSendReadCommands } from './commands/send.js'
+import { registerSendReplyCommands } from './commands/send.js'
+import { registerReadCommand } from './commands/read.js'
 import { registerInboxCommand } from './commands/inbox.js'
 import { registerSentCommand } from './commands/sent.js'
 import { registerThreadCommand } from './commands/thread.js'
@@ -20,7 +21,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     .exitOverride()
 
   registerContactsCommand(program, io)
-  registerSendReadCommands(program, io)
+  registerSendReplyCommands(program, io)
+  registerReadCommand(program, io)
   registerInboxCommand(program, io)
   registerSentCommand(program, io)
   registerThreadCommand(program, io)

@@ -40,7 +40,7 @@ describe('프로세스 종료 후 영속성', () => {
 
     const read = cli(['read', 'M-001', '--as', 'codex', '--json'], null)
     expect(read.code).toBe(0)
-    expect(JSON.parse(read.stdout).data.marked_read).toBe(true)
+    expect(JSON.parse(read.stdout).data.messages[0].marked_read).toBe(true)
 
     const inboxAfter = cli(['inbox', '--as', 'codex', '--json'], null)
     expect(JSON.parse(inboxAfter.stdout).data.messages[0].read).toBe(true)
@@ -64,16 +64,27 @@ describe('프로세스 출력 경계', () => {
     const largeBody = '가'.repeat(100_000) // UTF-8로 약 300KB
     const sent = cli(['send', '--from', 'claude', '--to', 'codex', '--subject', '큰 본문', '--body', largeBody, '--json'], null)
     expect(sent.code).toBe(0)
+    cli(['send', '--from', 'claude', '--to', 'codex', '--subject', '둘째 본문', '--body', 'b2', '--json'], null)
 
-    // 실제 파이프(`| wc -c`)로 자식 프로세스 stdout을 받아 본다
+    // 실제 파이프(`| wc -c`)로 자식 프로세스 stdout을 받아 본다. 여러 건의 본문이 한 번에 나간다
     const piped = spawnSync(
       'sh',
-      ['-c', `"${process.execPath}" ${NODE_FLAGS.join(' ')} "${CLI_PATH}" read M-001 --as codex --json | wc -c`],
+      ['-c', `"${process.execPath}" ${NODE_FLAGS.join(' ')} "${CLI_PATH}" read M-002 M-001 --as codex --json | wc -c`],
       { env: { ...process.env, TWIT_HOME: testHome(), TWIT_CONTACTS: 'dane,claude,codex,opencode,grok' }, encoding: 'utf8' },
     )
     expect(piped.status).toBe(0)
-    // 봉투·필드 전체를 담으려면 300KB 이상이어야 한다. 잘리면 이보다 작다.
+    // 큰 본문 한 건이 300KB를 넘는다. 잘리면 이보다 작다.
     expect(Number(piped.stdout.trim())).toBeGreaterThan(300_000)
+
+    // 파이프로 받은 JSON은 여러 건 전체를 담고 있다
+    const json = spawnSync(
+      'sh',
+      ['-c', `"${process.execPath}" ${NODE_FLAGS.join(' ')} "${CLI_PATH}" read M-001 --as codex --json`],
+      { env: { ...process.env, TWIT_HOME: testHome(), TWIT_CONTACTS: 'dane,claude,codex,opencode,grok' }, encoding: 'utf8' },
+    )
+    const parsed = JSON.parse(json.stdout)
+    expect(parsed.data.messages).toHaveLength(1)
+    expect(parsed.data.messages[0].body).toHaveLength(100_000)
   })
 
   it('표준 입력 본문도 공백 검사를 거친다', async () => {
@@ -93,7 +104,7 @@ describe('프로세스 출력 경계', () => {
     )
     expect(ok.status).toBe(0)
     const read = cli(['read', 'M-001', '--as', 'codex', '--json'], null)
-    expect(JSON.parse(read.stdout).data.message.body).toBe('stdin 본문')
+    expect(JSON.parse(read.stdout).data.messages[0].body).toBe('stdin 본문')
   })
 })
 

@@ -33,7 +33,7 @@ describe('send', () => {
   it('제목은 앞뒤 공백을 제거하고 본문은 그대로 저장한다', async () => {
     await run(['send', '--from', 'claude', '--to', 'codex', '--subject', '  제목  ', '--body', '  본문 앞뒤 공백 유지  ', '--json'])
     const read = await run(['read', 'M-001', '--as', 'codex', '--json'])
-    const message = read.json?.data?.message as Record<string, unknown>
+    const message = (read.json?.data?.messages as Record<string, unknown>[])[0]
     expect(message.subject).toBe('제목')
     expect(message.body).toBe('  본문 앞뒤 공백 유지  ')
   })
@@ -51,7 +51,7 @@ describe('send', () => {
 
     const read = await run(['read', 'M-001', '--as', 'codex', '--json'])
     expect(read.code).toBe(0)
-    expect((read.json?.data?.message as Record<string, unknown>).body).toBe(
+    expect((read.json?.data?.messages as Record<string, unknown>[])[0].body).toBe(
       '# 원본 명세\n이 내용으로 저장되어야 한다',
     )
   })

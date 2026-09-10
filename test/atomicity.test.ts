@@ -65,6 +65,63 @@ describe('원자성', () => {
     }
   })
 
+  it('여러 건 읽기 중 하나라도 문제가 있으면 어느 것도 읽음 처리되지 않는다', async () => {
+    for (const subject of ['첫째', '둘째', '셋째']) {
+      expect(
+        (await run(['send', '--from', 'claude', '--to', 'codex', '--subject', subject, '--body', 'b', '--json'])).code,
+      ).toBe(0)
+    }
+
+    // 없는 ID가 섞인 경우
+    const missing = await run(['read', 'M-001', 'M-999', '--as', 'codex', '--json'])
+    expect(missing.code).toBe(3)
+
+    // 권한 없는 ID가 섞인 경우(M-003은 opencode가 받은 메시지가 아니라 codex가 받았다. 권한 없는 건 opencode로 읽는다)
+    await run(['send', '--from', 'claude', '--to', 'opencode', '--subject', '넷째', '--body', 'b', '--json'])
+    const forbidden = await run(['read', 'M-001', 'M-004', '--as', 'codex', '--json'])
+    expect(forbidden.code).toBe(4)
+
+    // 두 경우 모두 아무것도 읽음 처리되지 않았다
+    const inbox = await run(['inbox', '--as', 'codex', '--json'])
+    expect(
+      (inbox.json?.data?.messages as Record<string, unknown>[]).every((m) => m.read === false),
+    ).toBe(true)
+  })
+
+  it('여러 건 읽기의 중간 UPDATE가 실패하면 전체가 롤백된다', async () => {
+    for (const subject of ['첫째', '둘째']) {
+      expect(
+        (await run(['send', '--from', 'claude', '--to', 'codex', '--subject', subject, '--body', 'b', '--json'])).code,
+      ).toBe(0)
+    }
+
+    // M-002(둘째)의 갱신만 실패시키는 트리거다. 날짜 조건으로 M-001의 갱신은 통과시킨다
+    const db = new DatabaseSync(path.join(testHome(), 'twit.db'))
+    try {
+      db.exec(`CREATE TRIGGER fail_on_second_read AFTER UPDATE ON receipts
+        WHEN NEW.message_id = 'M-002'
+        BEGIN SELECT RAISE(ABORT, 'forced failure'); END`)
+    } finally {
+      db.close()
+    }
+
+    const r = await run(['read', 'M-001', 'M-002', '--as', 'codex', '--json'])
+    expect(r.code).toBe(6)
+    expect(r.json?.error?.code).toBe('STORAGE_ERROR')
+
+    // 트리거를 치운 뒤 상태를 확인한다. M-001도 읽음 처리되어 있지 않아야 한다
+    const cleanup = new DatabaseSync(path.join(testHome(), 'twit.db'))
+    try {
+      cleanup.exec('DROP TRIGGER fail_on_second_read')
+    } finally {
+      cleanup.close()
+    }
+    const inbox = await run(['inbox', '--as', 'codex', '--json'])
+    expect(
+      (inbox.json?.data?.messages as Record<string, unknown>[]).every((m) => m.read === false),
+    ).toBe(true)
+  })
+
   it('답장도 같은 트랜잭션으로 저장된다', async () => {
     expect(
       (await run(['send', '--from', 'claude', '--to', 'codex', '--subject', '요청', '--body', 'b', '--json'])).code,

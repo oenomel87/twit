@@ -11,11 +11,10 @@ import {
 import { TwitError } from '../core/errors.js'
 import { runAction } from '../core/report.js'
 import { emitSuccess } from '../output/json.js'
-import { renderMessageDetail } from '../output/text.js'
-import { readMessage, replyMessage, sendMessage } from '../core/mailbox.js'
+import { replyMessage, sendMessage } from '../core/mailbox.js'
 import { toMessage } from '../core/queries.js'
 
-export function registerSendReadCommands(program: Command, io: CliIo): void {
+export function registerSendReplyCommands(program: Command, io: CliIo): void {
   const globals = (opts: GlobalOptions): GlobalOptions =>
     mergeGlobalOptions(program.opts() as GlobalOptions, opts)
 
@@ -103,21 +102,5 @@ export function registerSendReadCommands(program: Command, io: CliIo): void {
         )
       },
     )
-
-  program
-    .command('read')
-    .description('메시지를 읽고 수신자라면 읽음으로 표시합니다')
-    .argument('<id>', '메시지 ID')
-    .action((id: string, opts: GlobalOptions) => {
-      const g = globals(opts)
-      return runAction(io, g, () =>
-        withDb(io, (db) => {
-          const { as } = requireAs(io.env, g)
-          const { message, marked_read } = readMessage(db, as, id)
-          emitSuccess(io, g, { message: toMessage(message, as), marked_read }, () =>
-            renderMessageDetail(message),
-          )
-        }),
-      )
-    })
 }
+

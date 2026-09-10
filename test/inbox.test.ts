@@ -79,9 +79,9 @@ describe('inbox', () => {
     expect(summary.preview).toBe('첫 유효 줄')
 
     const read = await run(['read', 'M-001', '--as', 'codex', '--json'])
-    const message = read.json?.data?.message as Record<string, unknown>
-    expect(message.body).toBe('\n\n   첫 유효 줄\n둘째')
-    expect(message).not.toHaveProperty('preview')
+    const readItem = (read.json?.data?.messages as Record<string, unknown>[])[0]
+    expect(readItem.body).toBe('\n\n   첫 유효 줄\n둘째')
+    expect(readItem).not.toHaveProperty('preview')
   })
 })
 

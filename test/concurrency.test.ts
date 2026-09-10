@@ -76,11 +76,35 @@ describe('두 프로세스의 동시 실행', () => {
     ])
     expect(a.code).toBe(0)
     expect(b.code).toBe(0)
-    const marked = [JSON.parse(a.stdout).data.marked_read, JSON.parse(b.stdout).data.marked_read]
+    const marked = [
+      (JSON.parse(a.stdout).data.messages as Record<string, unknown>[])[0].marked_read,
+      (JSON.parse(b.stdout).data.messages as Record<string, unknown>[])[0].marked_read,
+    ]
     expect(marked.sort().reverse()).toEqual([true, false])
 
     // 첫 번째 시각이 유지된다
     const again = await run(['read', 'M-001', '--as', 'codex', '--json'])
-    expect(again.json?.data?.marked_read).toBe(false)
+    expect((again.json?.data?.messages as Record<string, unknown>[])[0].marked_read).toBe(false)
+  })
+
+  it('겹치는 ID를 두 프로세스가 동시에 읽어도 메시지별 marked_read: true는 한 번이다', async () => {
+    for (const subject of ['첫째', '둘째']) {
+      expect(
+        (await run(['send', '--from', 'claude', '--to', 'codex', '--subject', subject, '--body', 'b', '--json'])).code,
+      ).toBe(0)
+    }
+    const home = testHome()
+    const [a, b] = await Promise.all([
+      spawnCli(['read', 'M-001', 'M-002', '--as', 'codex', '--json'], home),
+      spawnCli(['read', 'M-002', 'M-001', '--as', 'codex', '--json'], home),
+    ])
+    expect(a.code).toBe(0)
+    expect(b.code).toBe(0)
+    const countTrue = (result: CliResult): number =>
+      (JSON.parse(result.stdout).data.messages as Record<string, unknown>[]).filter(
+        (m) => m.marked_read === true,
+      ).length
+    expect(countTrue(a)).toBe(2)
+    expect(countTrue(b)).toBe(0)
   })
 })
