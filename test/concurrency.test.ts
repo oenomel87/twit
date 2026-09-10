@@ -104,7 +104,8 @@ describe('두 프로세스의 동시 실행', () => {
       (JSON.parse(result.stdout).data.messages as Record<string, unknown>[]).filter(
         (m) => m.marked_read === true,
       ).length
-    expect(countTrue(a)).toBe(2)
-    expect(countTrue(b)).toBe(0)
+    // 어느 쪽이 먼저 잠금을 얻었는지는 환경이 정한다. 전체 true는 메시지당 정확히 한 번이다.
+    const trues = [countTrue(a), countTrue(b)].sort((x, y) => y - x)
+    expect(trues).toEqual([2, 0])
   })
 })
