@@ -1,9 +1,9 @@
-import type { Database } from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 import type { MessageRow } from './mailbox.js'
 
 export type InboxFilter = 'default' | 'unread' | 'archived' | 'all'
 
-export function inboxMessages(db: Database, actorId: string, filter: InboxFilter): MessageRow[] {
+export function inboxMessages(db: DatabaseSync, as: string, filter: InboxFilter): MessageRow[] {
   const base = 'recipient_id = ?'
   const condition =
     filter === 'all'
@@ -22,10 +22,10 @@ export function inboxMessages(db: Database, actorId: string, filter: InboxFilter
        WHERE ${condition}
        ORDER BY m.seq DESC`,
     )
-    .all(actorId) as MessageRow[]
+    .all(as) as unknown as MessageRow[]
 }
 
-export function sentMessages(db: Database, actorId: string): MessageRow[] {
+export function sentMessages(db: DatabaseSync, as: string): MessageRow[] {
   return db
     .prepare(
       `SELECT m.seq, m.id, m.thread_id, m.reply_to_id, m.sender_id, m.recipient_id, m.subject, m.body, m.created_at,
@@ -35,10 +35,10 @@ export function sentMessages(db: Database, actorId: string): MessageRow[] {
        WHERE sender_id = ?
        ORDER BY m.seq DESC`,
     )
-    .all(actorId) as MessageRow[]
+    .all(as) as unknown as MessageRow[]
 }
 
-export function threadMessages(db: Database, threadId: string): MessageRow[] {
+export function threadMessages(db: DatabaseSync, threadId: string): MessageRow[] {
   return db
     .prepare(
       `SELECT m.seq, m.id, m.thread_id, m.reply_to_id, m.sender_id, m.recipient_id, m.subject, m.body, m.created_at,
@@ -48,11 +48,11 @@ export function threadMessages(db: Database, threadId: string): MessageRow[] {
        WHERE thread_id = ?
        ORDER BY m.seq ASC`,
     )
-    .all(threadId) as MessageRow[]
+    .all(threadId) as unknown as MessageRow[]
 }
 
-export function toSummary(row: MessageRow, viewerId: string): Record<string, unknown> {
-  const isRecipient = row.recipient_id === viewerId
+export function toSummary(row: MessageRow, as: string): Record<string, unknown> {
+  const isRecipient = row.recipient_id === as
   return {
     id: row.id,
     thread_id: row.thread_id,
@@ -67,6 +67,6 @@ export function toSummary(row: MessageRow, viewerId: string): Record<string, unk
   }
 }
 
-export function toMessage(row: MessageRow, viewerId: string): Record<string, unknown> {
-  return { ...toSummary(row, viewerId), body: row.body }
+export function toMessage(row: MessageRow, as: string): Record<string, unknown> {
+  return { ...toSummary(row, as), body: row.body }
 }

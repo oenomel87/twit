@@ -1,13 +1,13 @@
 {
   "name": "twit",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "로컬 에이전트 메일함 CLI. 사람과 CLI 에이전트가 비동기 메시지를 주고받는다.",
   "type": "module",
   "bin": {
     "twit": "./bin/twit.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsc",
@@ -16,12 +16,10 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "better-sqlite3": "^12.2.0",
     "commander": "^14.0.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.15.0",
+    "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"

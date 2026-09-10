@@ -1,8 +1,8 @@
-import type { Database } from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 import { TwitError } from './errors.js'
 import { assertNotBlank, loadBody } from './body.js'
-import type { ContactRow } from './context.js'
 import { hashInput, resolveReplay, saveRequest } from './idempotency.js'
+import { immediate } from '../store/db.js'
 
 export interface MessageRow {
   seq: number
@@ -23,11 +23,12 @@ const SELECT_WITH_RECEIPT = `SELECT m.seq, m.id, m.thread_id, m.reply_to_id, m.s
 FROM messages m
 LEFT JOIN receipts r ON r.message_id = m.id`
 
-export function getMessage(db: Database, id: string): MessageRow | undefined {
-  return db.prepare(`${SELECT_WITH_RECEIPT} WHERE m.id = ?`).get(id) as MessageRow | undefined
+export function getMessage(db: DatabaseSync, id: string): MessageRow | undefined {
+  return db.prepare(`${SELECT_WITH_RECEIPT} WHERE m.id = ?`).get(id) as unknown as MessageRow | undefined
 }
 
 export interface SendInput {
+  from: string
   to: string
   subject?: string
   body?: string
@@ -40,15 +41,15 @@ export interface SendResult {
   replayed: boolean
 }
 
-function nextSeq(db: Database): number {
-  return (db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM messages').get() as { next: number }).next
+function nextSeq(db: DatabaseSync): number {
+  return (db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM messages').get() as unknown as { next: number }).next
 }
 
 function messageId(seq: number): string {
   return `M-${String(seq).padStart(3, '0')}`
 }
 
-function insertMessage(db: Database, row: {
+function insertMessage(db: DatabaseSync, row: {
   seq: number
   id: string
   threadId: string
@@ -76,11 +77,7 @@ function insertMessage(db: Database, row: {
   db.prepare('INSERT INTO receipts (message_id, read_at, archived) VALUES (?, NULL, 0)').run(row.id)
 }
 
-export async function sendMessage(
-  db: Database,
-  actor: ContactRow,
-  input: SendInput,
-): Promise<SendResult> {
+export async function sendMessage(db: DatabaseSync, input: SendInput): Promise<SendResult> {
   const subject = (input.subject ?? '').trim()
   assertNotBlank(subject, '제목')
   const body = await loadBody({ body: input.body, bodyFile: input.bodyFile })
@@ -88,17 +85,11 @@ export async function sendMessage(
     ? hashInput({ command: 'send', to: input.to, subject, body })
     : null
 
-  const apply = db.transaction((): SendResult => {
-    const replayId = resolveReplay(db, actor.id, input.requestId, inputHash)
+  return immediate(db, (): SendResult => {
+    const replayId = resolveReplay(db, input.from, input.requestId, inputHash)
     if (replayId) {
       const existing = getMessage(db, replayId)
       if (existing) return { message: existing, replayed: true }
-    }
-    const recipient = db.prepare('SELECT id FROM contacts WHERE id = ?').get(input.to) as
-      | { id: string }
-      | undefined
-    if (!recipient) {
-      throw new TwitError('NOT_FOUND', `등록되지 않은 수신자입니다: ${input.to}`, { to: input.to })
     }
     const seq = nextSeq(db)
     const id = messageId(seq)
@@ -107,17 +98,16 @@ export async function sendMessage(
       id,
       threadId: id,
       replyToId: null,
-      senderId: actor.id,
-      recipientId: recipient.id,
+      senderId: input.from,
+      recipientId: input.to,
       subject,
       body,
     })
     if (input.requestId && inputHash) {
-      saveRequest(db, actor.id, input.requestId, inputHash, id)
+      saveRequest(db, input.from, input.requestId, inputHash, id)
     }
-    return { message: getMessage(db, id) as MessageRow, replayed: false }
+    return { message: getMessage(db, id) as unknown as MessageRow, replayed: false }
   })
-  return apply.immediate()
 }
 
 export interface ReadResult {
@@ -125,46 +115,45 @@ export interface ReadResult {
   marked_read: boolean
 }
 
-export function readMessage(db: Database, actor: ContactRow, id: string): ReadResult {
-  const row = getMessage(db, id)
-  if (!row) {
-    throw new TwitError('NOT_FOUND', `메시지를 찾을 수 없습니다: ${id}`, { id })
-  }
-  if (row.sender_id !== actor.id && row.recipient_id !== actor.id) {
-    throw new TwitError('FORBIDDEN', '발신자나 수신자만 이 메시지를 읽을 수 있습니다.', {
-      id,
-      actor: actor.id,
-    })
-  }
-  let markedRead = false
-  if (row.recipient_id === actor.id) {
-    const result = db
-      .prepare('UPDATE receipts SET read_at = ? WHERE message_id = ? AND read_at IS NULL')
-      .run(new Date().toISOString(), id)
-    markedRead = result.changes === 1
-  }
-  return { message: getMessage(db, id) as MessageRow, marked_read: markedRead }
+export function readMessage(db: DatabaseSync, as: string, id: string): ReadResult {
+  return immediate(db, (): ReadResult => {
+    const row = getMessage(db, id)
+    if (!row) {
+      throw new TwitError('NOT_FOUND', `메시지를 찾을 수 없습니다: ${id}`, { id })
+    }
+    if (row.sender_id !== as && row.recipient_id !== as) {
+      throw new TwitError('FORBIDDEN', '발신자나 수신자만 이 메시지를 읽을 수 있습니다.', {
+        id,
+        as,
+      })
+    }
+    let markedRead = false
+    if (row.recipient_id === as) {
+      const result = db
+        .prepare('UPDATE receipts SET read_at = ? WHERE message_id = ? AND read_at IS NULL')
+        .run(new Date().toISOString(), id)
+      markedRead = Number(result.changes) === 1
+    }
+    return { message: getMessage(db, id) as unknown as MessageRow, marked_read: markedRead }
+  })
 }
 
 export interface ReplyInput {
+  as: string
   id: string
   body?: string
   bodyFile?: string
   requestId?: string
 }
 
-export async function replyMessage(
-  db: Database,
-  actor: ContactRow,
-  input: ReplyInput,
-): Promise<SendResult> {
+export async function replyMessage(db: DatabaseSync, input: ReplyInput): Promise<SendResult> {
   const body = await loadBody({ body: input.body, bodyFile: input.bodyFile })
   const inputHash = input.requestId
     ? hashInput({ command: 'reply', reply_to_id: input.id, body })
     : null
 
-  const apply = db.transaction((): SendResult => {
-    const replayId = resolveReplay(db, actor.id, input.requestId, inputHash)
+  return immediate(db, (): SendResult => {
+    const replayId = resolveReplay(db, input.as, input.requestId, inputHash)
     if (replayId) {
       const existing = getMessage(db, replayId)
       if (existing) return { message: existing, replayed: true }
@@ -173,16 +162,16 @@ export async function replyMessage(
     if (!original) {
       throw new TwitError('NOT_FOUND', `메시지를 찾을 수 없습니다: ${input.id}`, { id: input.id })
     }
-    if (original.sender_id !== actor.id && original.recipient_id !== actor.id) {
+    if (original.sender_id !== input.as && original.recipient_id !== input.as) {
       throw new TwitError('FORBIDDEN', '발신자나 수신자만 답장할 수 있습니다.', {
         id: original.id,
-        actor: actor.id,
+        as: input.as,
       })
     }
     const recipientId =
       original.sender_id === original.recipient_id
         ? original.sender_id
-        : original.recipient_id === actor.id
+        : original.recipient_id === input.as
           ? original.sender_id
           : original.recipient_id
     const seq = nextSeq(db)
@@ -192,22 +181,21 @@ export async function replyMessage(
       id,
       threadId: original.thread_id,
       replyToId: original.id,
-      senderId: actor.id,
+      senderId: input.as,
       recipientId: recipientId,
       subject: original.subject,
       body,
     })
     if (input.requestId && inputHash) {
-      saveRequest(db, actor.id, input.requestId, inputHash, id)
+      saveRequest(db, input.as, input.requestId, inputHash, id)
     }
-    return { message: getMessage(db, id) as MessageRow, replayed: false }
+    return { message: getMessage(db, id) as unknown as MessageRow, replayed: false }
   })
-  return apply.immediate()
 }
 
 export function setArchived(
-  db: Database,
-  actor: ContactRow,
+  db: DatabaseSync,
+  as: string,
   id: string,
   archived: boolean,
 ): { id: string; archived: boolean } {
@@ -215,10 +203,10 @@ export function setArchived(
   if (!row) {
     throw new TwitError('NOT_FOUND', `메시지를 찾을 수 없습니다: ${id}`, { id })
   }
-  if (row.recipient_id !== actor.id) {
+  if (row.recipient_id !== as) {
     throw new TwitError('FORBIDDEN', '수신자만 보관 상태를 바꿀 수 있습니다.', {
       id,
-      actor: actor.id,
+      as,
     })
   }
   db.prepare('UPDATE receipts SET archived = ? WHERE message_id = ?').run(archived ? 1 : 0, id)

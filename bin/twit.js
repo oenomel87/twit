@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --disable-warning=ExperimentalWarning
 import { runCli } from '../dist/main.js'
 
 // 파이프로 내보낼 때 process.exit()가 대기 중인 쓰기를 버리지 않도록 exitCode로 마친다.

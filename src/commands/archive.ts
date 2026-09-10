@@ -2,7 +2,7 @@ import type { Command } from 'commander'
 import type { CliIo } from '../core/io.js'
 import {
   mergeGlobalOptions,
-  requireActor,
+  requireAs,
   withDb,
   type GlobalOptions,
 } from '../core/context.js'
@@ -23,8 +23,8 @@ export function registerArchiveCommands(program: Command, io: CliIo): void {
         const g = globals(opts)
         return runAction(io, g, () =>
           withDb(io, (db) => {
-            const actor = requireActor({ db }, g, io.env)
-            const result = setArchived(db, actor, id, archived)
+            const { as } = requireAs(io.env, g)
+            const result = setArchived(db, as, id, archived)
             emitSuccess(io, g, result, () =>
               `${result.id} ${result.archived ? 'archived' : 'unarchived'}`,
             )

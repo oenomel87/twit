@@ -2,31 +2,31 @@ import type { Command } from 'commander'
 import type { CliIo } from '../core/io.js'
 import {
   mergeGlobalOptions,
-  requireActor,
+  requireAs,
   withDb,
   type GlobalOptions,
 } from '../core/context.js'
+import { TwitError } from '../core/errors.js'
 import { runAction } from '../core/report.js'
 import { emitSuccess } from '../output/json.js'
 import { renderMessageList } from '../output/text.js'
-import { inboxMessages, sentMessages, toSummary, type InboxFilter } from '../core/queries.js'
-import { TwitError } from '../core/errors.js'
+import { inboxMessages, toSummary, type InboxFilter } from '../core/queries.js'
 
-export function registerListCommands(program: Command, io: CliIo): void {
+export function registerInboxCommand(program: Command, io: CliIo): void {
   const globals = (opts: GlobalOptions): GlobalOptions =>
     mergeGlobalOptions(program.opts() as GlobalOptions, opts)
 
   program
     .command('inbox')
     .description('자신이 받은 메시지를 조회합니다')
-    .option('--unread', '읽지 않은 메시지만 조회한다', false)
-    .option('--archived', '보관한 메시지만 조회한다', false)
-    .option('--all', '보관 여부와 관계없이 받은 메시지 전체를 조회한다', false)
-    .action((opts: GlobalOptions & { unread: boolean; archived: boolean; all: boolean }) => {
+    .option('--unread', '읽지 않은 메시지만 조회한다')
+    .option('--archived', '보관한 메시지만 조회한다')
+    .option('--all', '보관 여부와 관계없이 받은 메시지 전체를 조회한다')
+    .action((opts: GlobalOptions & { unread?: boolean; archived?: boolean; all?: boolean }) => {
       const g = globals(opts)
       return runAction(io, g, () =>
         withDb(io, (db) => {
-          const actor = requireActor({ db }, g, io.env)
+          const { as } = requireAs(io.env, g)
           const flags = [opts.unread && 'unread', opts.archived && 'archived', opts.all && 'all'].filter(
             Boolean,
           ) as string[]
@@ -37,28 +37,12 @@ export function registerListCommands(program: Command, io: CliIo): void {
             )
           }
           const filter: InboxFilter = (flags[0] as InboxFilter | undefined) ?? 'default'
-          const rows = inboxMessages(db, actor.id, filter)
+          const rows = inboxMessages(db, as, filter)
           emitSuccess(
             io,
             g,
-            { messages: rows.map((row) => toSummary(row, actor.id)) },
-            () => renderMessageList(rows, actor.id, { showArchived: filter === 'all' }),
-          )
-        }),
-      )
-    })
-
-  program
-    .command('sent')
-    .description('자신이 보낸 메시지를 조회합니다')
-    .action((opts: GlobalOptions) => {
-      const g = globals(opts)
-      return runAction(io, g, () =>
-        withDb(io, (db) => {
-          const actor = requireActor({ db }, g, io.env)
-          const rows = sentMessages(db, actor.id)
-          emitSuccess(io, g, { messages: rows.map((row) => toSummary(row, actor.id)) }, () =>
-            renderMessageList(rows, actor.id),
+            { messages: rows.map((row) => toSummary(row, as)) },
+            () => renderMessageList(rows, as, { showArchived: filter === 'all' }),
           )
         }),
       )

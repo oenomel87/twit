@@ -3,9 +3,10 @@ import { EXIT_CODES } from './core/errors.js'
 import type { CliIo } from './core/io.js'
 import { reportError, ReportedError } from './core/report.js'
 import { errorEnvelope } from './output/json.js'
-import { registerContactsCommands } from './commands/contacts.js'
+import { registerContactsCommand } from './commands/contacts.js'
 import { registerSendReadCommands } from './commands/send.js'
-import { registerListCommands } from './commands/inbox.js'
+import { registerInboxCommand } from './commands/inbox.js'
+import { registerSentCommand } from './commands/sent.js'
 import { registerThreadCommand } from './commands/thread.js'
 import { registerArchiveCommands } from './commands/archive.js'
 
@@ -15,12 +16,13 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     .name('twit')
     .description('로컬 에이전트 메일함. 사람과 CLI 에이전트가 비동기 메시지를 주고받는다.')
     .option('--json', '결과를 JSON 봉투로 출력한다')
-    .option('--actor <id>', '호출자 참여자 ID')
+    .option('--as <이름>', '누구의 메일함인지 지정한다. contacts와 send에서는 쓰지 않는다')
     .exitOverride()
 
-  registerContactsCommands(program, io)
+  registerContactsCommand(program, io)
   registerSendReadCommands(program, io)
-  registerListCommands(program, io)
+  registerInboxCommand(program, io)
+  registerSentCommand(program, io)
   registerThreadCommand(program, io)
   registerArchiveCommands(program, io)
 

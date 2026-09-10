@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process'
-import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createHome, run, setup, testHome } from './helpers.js'
 
 const CLI_PATH = fileURLToPath(new URL('../bin/twit.js', import.meta.url))
+const NODE_FLAGS = ['--disable-warning=ExperimentalWarning']
 
 interface CliResult {
   code: number
@@ -12,11 +12,14 @@ interface CliResult {
   stderr: string
 }
 
-function spawnCli(args: string[], actor: string | null, home: string): Promise<CliResult> {
+function spawnCli(args: string[], home: string): Promise<CliResult> {
   return new Promise((resolve, reject) => {
-    const env: NodeJS.ProcessEnv = { ...process.env, TWIT_HOME: home }
-    if (actor !== null) env.TWIT_ACTOR = actor
-    const child = spawn(process.execPath, [CLI_PATH, ...args], { env })
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      TWIT_HOME: home,
+      TWIT_CONTACTS: 'dane,claude,codex,opencode,grok',
+    }
+    const child = spawn(process.execPath, [...NODE_FLAGS, CLI_PATH, ...args], { env })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()))
@@ -26,17 +29,16 @@ function spawnCli(args: string[], actor: string | null, home: string): Promise<C
   })
 }
 
-beforeEach(() => {
-  createHome()
+beforeEach(async () => {
+  await setup()
 })
 
 describe('두 프로세스의 동시 실행', () => {
   it('동시 전송은 메시지 두 개와 서로 다른 ID를 만든다', async () => {
-    await setup()
     const home = testHome()
     const [a, b] = await Promise.all([
-      spawnCli(['send', '--to', 'codex-1', '--subject', '동시1', '--body', 'a', '--json'], 'dane', home),
-      spawnCli(['send', '--to', 'codex-1', '--subject', '동시2', '--body', 'b', '--json'], 'dane', home),
+      spawnCli(['send', '--from', 'claude', '--to', 'codex', '--subject', '동시1', '--body', 'a', '--json'], home),
+      spawnCli(['send', '--from', 'claude', '--to', 'codex', '--subject', '동시2', '--body', 'b', '--json'], home),
     ])
     expect(a.code).toBe(0)
     expect(b.code).toBe(0)
@@ -44,20 +46,16 @@ describe('두 프로세스의 동시 실행', () => {
     const idB = JSON.parse(b.stdout).data.message.id
     expect(new Set([idA, idB])).toEqual(new Set(['M-001', 'M-002']))
 
-    const inbox = await run('codex-1', ['inbox', '--json'])
+    const inbox = await run(['inbox', '--as', 'codex', '--json'])
     expect((inbox.json?.data?.messages as unknown[]).length).toBe(2)
   })
 
   it('동일 요청 키의 동시 전송은 메시지 한 개와 replayed 한 번이다', async () => {
-    await setup()
     const home = testHome()
     const args = [
-      'send', '--to', 'codex-1', '--subject', '동일', '--body', '같은 본문', '--request-id', 'same', '--json',
+      'send', '--from', 'claude', '--to', 'codex', '--subject', '동일', '--body', '같은 본문', '--request-id', 'same', '--json',
     ]
-    const [a, b] = await Promise.all([
-      spawnCli(args, 'dane', home),
-      spawnCli(args, 'dane', home),
-    ])
+    const [a, b] = await Promise.all([spawnCli(args, home), spawnCli(args, home)])
     expect(a.code).toBe(0)
     expect(b.code).toBe(0)
     const replayedFlags = [JSON.parse(a.stdout).data.replayed, JSON.parse(b.stdout).data.replayed]
@@ -65,17 +63,16 @@ describe('두 프로세스의 동시 실행', () => {
     const ids = [JSON.parse(a.stdout).data.message.id, JSON.parse(b.stdout).data.message.id]
     expect(ids[0]).toBe(ids[1])
 
-    const inbox = await run('codex-1', ['inbox', '--json'])
+    const inbox = await run(['inbox', '--as', 'codex', '--json'])
     expect((inbox.json?.data?.messages as unknown[]).length).toBe(1)
   })
 
   it('동시 읽기는 marked_read: true를 정확히 한 번 돌려준다', async () => {
-    await setup()
-    await run('dane', ['send', '--to', 'codex-1', '--subject', '읽기 경쟁', '--body', 'b', '--json'])
+    await run(['send', '--from', 'claude', '--to', 'codex', '--subject', '읽기 경쟁', '--body', 'b', '--json'])
     const home = testHome()
     const [a, b] = await Promise.all([
-      spawnCli(['read', 'M-001', '--json'], 'codex-1', home),
-      spawnCli(['read', 'M-001', '--json'], 'codex-1', home),
+      spawnCli(['read', 'M-001', '--as', 'codex', '--json'], home),
+      spawnCli(['read', 'M-001', '--as', 'codex', '--json'], home),
     ])
     expect(a.code).toBe(0)
     expect(b.code).toBe(0)
@@ -83,7 +80,7 @@ describe('두 프로세스의 동시 실행', () => {
     expect(marked.sort().reverse()).toEqual([true, false])
 
     // 첫 번째 시각이 유지된다
-    const again = await run('codex-1', ['read', 'M-001', '--json'])
+    const again = await run(['read', 'M-001', '--as', 'codex', '--json'])
     expect(again.json?.data?.marked_read).toBe(false)
   })
 })

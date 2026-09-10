@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { Database } from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 import { TwitError } from './errors.js'
 
 export function hashInput(payload: Record<string, unknown>): string {
@@ -15,17 +15,17 @@ interface RequestRow {
 }
 
 export function findRequest(
-  db: Database,
+  db: DatabaseSync,
   senderId: string,
   requestId: string,
 ): RequestRow | undefined {
   return db
     .prepare('SELECT * FROM requests WHERE sender_id = ? AND request_id = ?')
-    .get(senderId, requestId) as RequestRow | undefined
+    .get(senderId, requestId) as unknown as RequestRow | undefined
 }
 
 export function saveRequest(
-  db: Database,
+  db: DatabaseSync,
   senderId: string,
   requestId: string,
   inputHash: string,
@@ -37,7 +37,7 @@ export function saveRequest(
 }
 
 export function resolveReplay(
-  db: Database,
+  db: DatabaseSync,
   senderId: string,
   requestId: string | undefined,
   inputHash: string | null,

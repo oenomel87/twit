@@ -1,11 +1,14 @@
 import type { Command } from 'commander'
 import type { CliIo } from '../core/io.js'
 import {
+  loadContacts,
   mergeGlobalOptions,
-  requireActor,
+  requireAs,
+  requireName,
   withDb,
   type GlobalOptions,
 } from '../core/context.js'
+import { TwitError } from '../core/errors.js'
 import { runAction } from '../core/report.js'
 import { emitSuccess } from '../output/json.js'
 import { renderMessageDetail } from '../output/text.js'
@@ -19,7 +22,8 @@ export function registerSendReadCommands(program: Command, io: CliIo): void {
   program
     .command('send')
     .description('메시지를 전송합니다')
-    .requiredOption('--to <id>', '수신자 참여자 ID')
+    .requiredOption('--from <이름>', '발신자 이름')
+    .requiredOption('--to <이름>', '수신자 이름')
     .requiredOption('--subject <subject>', '제목')
     .option('--body <body>', '본문')
     .option('--body-file <path>', '본문 파일. - 이면 표준 입력')
@@ -27,6 +31,7 @@ export function registerSendReadCommands(program: Command, io: CliIo): void {
     .action(
       async (
         opts: GlobalOptions & {
+          from: string
           to: string
           subject: string
           body?: string
@@ -35,25 +40,35 @@ export function registerSendReadCommands(program: Command, io: CliIo): void {
         },
       ) => {
         const g = globals(opts)
-        return runAction(io, g, () =>
-          withDb(io, async (db) => {
-            const actor = requireActor({ db }, g, io.env)
-            const { message, replayed } = await sendMessage(db, actor, {
-              to: opts.to,
+        return runAction(io, g, () => {
+          if (g.as !== undefined) {
+            throw new TwitError(
+              'VALIDATION_ERROR',
+              'send에는 --as를 쓸 수 없습니다. 발신자는 --from, 수신자는 --to로 지정하세요.',
+            )
+          }
+          const contacts = loadContacts(io.env)
+          const from = requireName(opts.from, contacts, '--from')
+          const to = requireName(opts.to, contacts, '--to')
+          return withDb(io, async (db) => {
+            const { message, replayed } = await sendMessage(db, {
+              from,
+              to,
               subject: opts.subject,
               body: opts.body,
               bodyFile: opts.bodyFile,
               requestId: opts.requestId,
             })
-          emitSuccess(
-            io,
-            g,
-            { message: toMessage(message, actor.id), replayed },
-            () => `sent ${message.id} -> ${message.recipient_id}  ${message.subject}`,
-          )
-        }),
-      )
-    })
+            emitSuccess(
+              io,
+              g,
+              { message: toMessage(message, from), replayed },
+              () => `sent ${message.id} -> ${message.recipient_id}  ${message.subject}`,
+            )
+          })
+        })
+      },
+    )
 
   program
     .command('reply')
@@ -70,22 +85,24 @@ export function registerSendReadCommands(program: Command, io: CliIo): void {
         const g = globals(opts)
         return runAction(io, g, () =>
           withDb(io, async (db) => {
-            const actor = requireActor({ db }, g, io.env)
-            const { message, replayed } = await replyMessage(db, actor, {
+            const { as } = requireAs(io.env, g)
+            const { message, replayed } = await replyMessage(db, {
+              as,
               id,
               body: opts.body,
               bodyFile: opts.bodyFile,
               requestId: opts.requestId,
             })
-          emitSuccess(
-            io,
-            g,
-            { message: toMessage(message, actor.id), replayed },
-            () => `sent ${message.id} -> ${message.recipient_id}  ${message.subject}`,
-          )
-        }),
-      )
-    })
+            emitSuccess(
+              io,
+              g,
+              { message: toMessage(message, as), replayed },
+              () => `sent ${message.id} -> ${message.recipient_id}  ${message.subject}`,
+            )
+          }),
+        )
+      },
+    )
 
   program
     .command('read')
@@ -95,9 +112,9 @@ export function registerSendReadCommands(program: Command, io: CliIo): void {
       const g = globals(opts)
       return runAction(io, g, () =>
         withDb(io, (db) => {
-          const actor = requireActor({ db }, g, io.env)
-          const { message, marked_read } = readMessage(db, actor, id)
-          emitSuccess(io, g, { message: toMessage(message, actor.id), marked_read }, () =>
+          const { as } = requireAs(io.env, g)
+          const { message, marked_read } = readMessage(db, as, id)
+          emitSuccess(io, g, { message: toMessage(message, as), marked_read }, () =>
             renderMessageDetail(message),
           )
         }),

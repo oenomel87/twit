@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { runCli } from '../src/main.js'
 
+export const CONTACTS = 'dane,claude,codex,opencode,grok'
+
 export interface RunResult {
   code: number
   stdout: string
@@ -28,18 +30,15 @@ export function testHome(): string {
 
 export interface RunOptions {
   env?: Record<string, string | undefined>
+  contacts?: string | null
 }
 
-export async function run(
-  actor: string | null,
-  args: string[],
-  opts: RunOptions = {},
-): Promise<RunResult> {
+export async function run(args: string[], opts: RunOptions = {}): Promise<RunResult> {
   const out: string[] = []
   const err: string[] = []
   const env: Record<string, string | undefined> = {
     TWIT_HOME: currentHome,
-    ...(actor !== null ? { TWIT_ACTOR: actor } : {}),
+    ...(opts.contacts === null ? {} : { TWIT_CONTACTS: opts.contacts ?? CONTACTS }),
     ...opts.env,
   }
   const code = await runCli(args, {
@@ -57,10 +56,8 @@ export async function run(
   return { code, stdout, stderr: err.join(''), json }
 }
 
+/** 임시 홈을 만든다. 참여자 등록은 환경변수 주소록으로 대체됐다. */
 export async function setup(): Promise<string> {
   createHome()
-  await run(null, ['contacts', 'add', 'dane', '--name', 'Dane'])
-  await run('dane', ['contacts', 'add', 'codex-1', '--name', 'Codex 1'])
-  await run('dane', ['contacts', 'add', 'opencode-1', '--name', 'OpenCode 1'])
   return currentHome
 }
