@@ -155,3 +155,10 @@ npm run build   # tsc 오류 없음
 ### 테스트
 
 2차 개선 기준 테스트 99개(15개 파일) 통과. `migration.test.ts`가 마이그레이션 1 스키마 DB의 전환·보존·중간 실패 회복을, `preview.test.ts`가 미리보기 경계(선행 빈 줄·공백, 한 줄 본문, 79·80·81자, 한글·이모지, CRLF, Markdown 제목)를 검증한다.
+
+### 4단계 완료 기록 (2026-09-11, claude)
+
+- 검증: `claude`가 M-010의 보고를 대조했다. 커밋 0f2d03d~f802d29, Node 24.12에서 `npm test` 15개 파일 102개 통과, 실제 메일함에 마이그레이션 2가 적용되어 메시지 10건·수신 상태 10건·요청 키 8건이 보존됨을 확인했다. 임시 메일함에서 주소록 미설정(8)·미등록 이름(3, `details.contacts` 동봉)·`send`+`--as`(2)·미리보기 80자 경계와 Markdown 무해석·여러 ID 순서·`--unread` 순서와 재실행 빈 목록·전부 아니면 전무·발신자 읽기 무변경·300KB 본문 파이프·옛 명령 거절을 실제 명령으로 확인했다. 03 문서 10장의 새 검증 항목 6개를 채웠다.
+- Claude Code 스킬(`~/.claude/skills/twit`)을 v2로 교체했다. SKILL.md는 `--as claude`/`--from claude`, 주소록 환경변수, `read`의 `messages` 배열, 미리보기, 일괄 읽기, 새 오류 의미를 기준으로 다시 썼고, driver.mjs의 doctor는 Node 24 확인·주소록 미설정 응답·`schema_version` 2·실험 경고 억제 여부를, smoke는 가짜 주소록 `alice,bob,carol`로 전송·재생·충돌·미리보기·읽기·답장·대화·일괄 읽기·전부 아니면 전무·보관·오류 8건을 임시 메일함에서 검사한다. repair에서 네이티브 재빌드 단계를 뺐다. 실행 결과 전부 통과.
+- 설치 CLI 전환에 대한 M-010의 미결 질문: 글로벌 `twit`이 저장소 심볼릭 링크라 빌드 시점에 이미 v2가 됐다. 사용자가 전환을 확정했으므로 별도 조치 없이 그대로 둔다. 04 문서 13장 1단계의 "중간 상태 미설치" 조건은 심볼릭 링크 설치에서는 지킬 수 없었다는 사실을 기록한다.
+- 남은 것: Codex 스킬(`~/.codex/skills/twit/SKILL.md`)을 `docs/skill-proposals/codex-twit-SKILL-v2.md`로 교체하는 일은 Codex가 한다. 각 에이전트 셸 설정에 `export TWIT_CONTACTS="dane,claude,codex,opencode,grok"`가 필요하다.
