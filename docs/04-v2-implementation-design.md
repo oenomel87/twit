@@ -106,7 +106,11 @@ CREATE TABLE requests (                    -- 전송 중복 방지
 );
 ```
 
-- 마이그레이션 1(1차 구현)은 `contacts` 테이블과 `messages`의 발신자·수신자 외래키를 가지고 있었다. 마이그레이션 2는 외래키 없는 `messages`를 새로 만들어 행을 복사하고 이름을 바꾼 뒤 `contacts`를 삭제한다. SQLite는 제약을 바로 지울 수 없으므로 테이블 재생성으로 처리하며, `foreign_keys=OFF` 상태에서 한 트랜잭션으로 실행하고 인덱스를 다시 만든다. 기존 메시지의 `claude-1` 같은 이름은 그대로 남는다.
+- 마이그레이션 1(1차 구현)은 `contacts` 테이블과 `messages`의 발신자·수신자 외래키를 가지고 있었다. 마이그레이션 2는 SQLite 공식 절차(테이블 재생성)로 외래키를 없애고 `contacts`를 삭제한다. 기존 메시지의 `claude-1` 같은 이름은 그대로 남는다.
+  - 순서: 트랜잭션 시작 전에 `PRAGMA foreign_keys=OFF` → `BEGIN IMMEDIATE` → 새 `messages_new` 생성 → `INSERT INTO messages_new SELECT …` → 기존 `messages` 삭제 → `messages_new`를 `messages`로 이름 변경 → 인덱스 재생성 → `DROP TABLE contacts` → `PRAGMA foreign_key_check` → 결과가 비어 있으면 `COMMIT`, 아니면 `ROLLBACK` → 성공·실패 모두 `PRAGMA foreign_keys=ON`.
+  - 보존 검증: `messages`의 `seq`·`id`·`thread_id`·`reply_to_id`·이름·본문, `receipts`의 `read_at`·`archived`, `requests`의 키·해시·메시지 참조가 전환 전후로 같아야 한다. 전환 후 기존 요청 키 재전송은 새 메시지를 만들지 않고 `replayed: true`를 돌려준다.
+  - 실패 내성: 중간 단계에서 실패하면 원래 스키마와 데이터가 남고, 다시 실행하면 정상 전환된다. `migration.test.ts`가 중간 실패를 유도해 확인한다.
+  - 참고: https://www.sqlite.org/lang_altertable.html#making_other_kinds_of_table_schema_changes
 - ID 규칙: 쓰기 트랜잭션 안에서 `SELECT COALESCE(MAX(seq), 0) + 1`로 다음 `seq`를 계산하고, `id`를 `M-` + `String(seq).padStart(3, '0')`으로 만들어 `seq`와 `id`를 같은 `INSERT`에 명시한다. `AUTOINCREMENT`는 삭제가 없으므로 계산값과 항상 일치하며, 삽입 후 갱신은 하지 않는다. 트랜잭션이 `BEGIN IMMEDIATE`이므로 두 프로세스가 같은 `seq`를 계산할 수 없다.
 - `thread_id`는 `send`에서 자기 `id`, `reply`에서 원문의 `thread_id`다.
 - 정렬은 항상 `seq`다. `created_at`이 같아도 순서가 결정된다.
@@ -115,10 +119,10 @@ CREATE TABLE requests (                    -- 전송 중복 방지
 ## 4. 주소록과 이름
 
 ```sh
-export TWIT_CONTACTS="dane,claude-code,codex,opencode"
+export TWIT_CONTACTS="dane,claude,codex,opencode,grok"
 twit contacts
-twit inbox --as claude-code
-twit send --from claude-code --to codex --subject "..." --body-file request.md
+twit inbox --as claude
+twit send --from claude --to codex --subject "..." --body-file request.md
 ```
 
 - 주소록 해석: `TWIT_CONTACTS`를 쉼표로 나누고 각 항목의 앞뒤 공백을 제거하며 빈 항목은 버린다. 환경변수가 없거나 결과가 비어 있으면 `ACTOR_NOT_CONFIGURED`로 거절하고 설정 예시를 안내한다. `contacts`도 이때는 빈 목록 대신 같은 오류를 낸다. 설정이 없다는 사실을 숨기지 않기 위해서다.
@@ -131,7 +135,7 @@ twit send --from claude-code --to codex --subject "..." --body-file request.md
 
 ## 5. 명령과 JSON 구조
 
-전역 옵션: `--json`, `--actor <id>`. 모든 성공 응답은 아래 봉투를 따른다.
+전역 옵션: `--json`, `--as <이름>`(`contacts`와 `send`는 받지 않는다). 모든 성공 응답은 아래 봉투를 따른다.
 
 ```json
 { "schema_version": 2, "ok": true, "data": { }, "error": null }
@@ -162,7 +166,7 @@ twit send --from claude-code --to codex --subject "..." --body-file request.md
 
 | 명령 | 옵션 | `data` |
 |---|---|---|
-| `contacts` | `--as` 불필요 | `{ "contacts": ["dane", "claude-code", "codex", "opencode"] }` 주소록 순서 |
+| `contacts` | `--as` 불필요 | `{ "contacts": ["dane", "claude", "codex", "opencode", "grok"] }` 주소록 순서 |
 | `inbox` | `--as`, `--unread` / `--archived` / `--all` 중 최대 하나 | `{ "messages": [MessageSummary] }` 최신순 |
 | `read [ids...]` | `--as`, `--unread` (ID와 함께 불가) | `{ "messages": [Message + { "marked_read": true\|false }] }` ID는 지정 순서, `--unread`는 오래된 순 |
 | `send` | `--from`, `--to`, `--subject`, `--body`/`--body-file`, `--request-id` | `{ "message": Message, "replayed": false }` |
@@ -262,8 +266,8 @@ twit send --from claude-code --to codex --subject "..." --body-file request.md
 
 포함 내용:
 
-1. 설정: `TWIT_ACTOR` 지정, `twit whoami`로 확인, `twit contacts`로 상대 확인.
-2. 세션 규칙: 세션 시작 시와 작업을 마치기 전에 `twit inbox --json`을 실행한다. 기본 인박스는 읽었지만 보관하지 않은 메시지도 포함하므로 이전 세션에서 읽고 처리하지 못한 요청이 함께 보인다. 읽지 않은 메시지는 `read`로 읽고, 필요한 경우 `reply`하며, 처리가 끝난 메시지는 `archive`로 보관해 인박스를 비운다. `--unread`는 이미 처리 중인 세션에서 새로 온 것만 볼 때 쓴다. 인박스에 남아 있는 메시지는 아직 처리하지 않은 것으로 간주한다. 이는 참여자 사이의 사용 관례이며, 03 문서 원칙대로 twit이 보관을 완료로 해석하지는 않는다.
+1. 설정: 셸 설정의 `TWIT_CONTACTS`, 자기 실행 환경에서 `twit contacts --json`으로 목록 확인, 자기 제품명과 맞는 이름 고르기(없거나 둘 이상이면 사람에게 질문), 사람이 지정한 이름 우선. 환경변수는 프로세스별로 상속되므로 목록을 바꾸면 각 에이전트 환경에서 다시 확인한다.
+2. 세션 규칙: 세션 시작 시와 작업을 마치기 전에 `twit inbox --as <이름> --json`을 실행한다. 기본 인박스는 읽었지만 보관하지 않은 메시지도 포함하므로 이전 세션에서 읽고 처리하지 못한 요청이 함께 보인다. 읽지 않은 메시지는 `read`로 읽고, 필요한 경우 `reply`하며, 처리가 끝난 메시지는 `archive`로 보관해 인박스를 비운다. `--unread`는 이미 처리 중인 세션에서 새로 온 것만 볼 때 쓴다. 인박스에 남아 있는 메시지는 아직 처리하지 않은 것으로 간주한다. 이는 참여자 사이의 사용 관례이며, 03 문서 원칙대로 twit이 보관을 완료로 해석하지는 않는다.
 3. 요청 작성: 작업 위치 절대 경로, 요청 내용, 원하는 답장 형식을 본문에 적는다. 03 문서 6장의 예시를 옮긴다.
 4. 긴 문서·폴더 전달: 03 문서 6장의 표와 폴더 예시, 본문 저장과 경로 참조의 시점 차이.
 5. 긴 대화 확인: `thread --no-body`로 새 답장을 찾고 필요한 메시지만 `read`.
@@ -307,7 +311,9 @@ twit send --from claude-code --to codex --subject "..." --body-file request.md
 | 전송·답장으로 프로세스 미실행 | `fs-boundary.test.ts` (`child_process` 사용처가 테스트 외에 없음) |
 | 실제 두 CLI 에이전트가 요청→질문→답변→결과 수행 | 수동 검증. 결과를 05 문서 끝에 기록 |
 
-## 11. 실행 계획
+## 11. 1차 구현 실행 계획 (완료된 과거 기록)
+
+이 장은 2026-09-09에 완료된 1차 구현의 계획이며, 등록제·`--actor`·`whoami` 등 1차 명령을 기준으로 한다. 현재 계획은 13장이다.
 
 각 단계는 테스트 통과로 끝나며 다음 단계의 전제다. 단계마다 확인 명령을 적었다.
 
@@ -388,6 +394,8 @@ TWIT_HOME=/tmp/twit-demo twit whoami          # 종료 코드 8
 
 ### 1단계: Node 24, node:sqlite, 주소록과 이름 전환
 
+- JSON 봉투 `schema_version`은 응답 구조가 처음 바뀌는 이 단계에서 2로 올린다. 1단계에서 `contacts`의 `data`가 이름 배열로 바뀌기 때문이다. 버전 1에 서로 다른 구조가 섞이지 않게 한다.
+- 1단계부터 3단계까지의 중간 상태는 실제 사용자용 CLI(`npm link`)에 적용하지 않는다. 3단계가 끝난 뒤 4단계에서 CLI와 양쪽 스킬을 한 번에 전환한다. 그 전까지 설치된 CLI는 1차(버전 1)로 유지해 메일 왕복이 끊기지 않게 한다.
 - `.node-version`을 24로, `package.json`의 `engines`를 `>=24`로 올리고 `better-sqlite3`와 `@types/better-sqlite3`를 제거한다. `@types/node`를 24로 올린다.
 - `store/db.ts`를 `node:sqlite`로 다시 쓰고 `immediate(fn)` 트랜잭션 도우미를 둔다. `mailbox.ts`의 `db.transaction(...).immediate()` 호출을 이 도우미로 바꾼다. `withDb`의 오류 판별을 `ERR_SQLITE_ERROR` 기준으로 바꾼다. 테스트에서 DB를 직접 여는 곳(`atomicity.test.ts` 등)도 `node:sqlite`로 바꾼다.
 - `bin/twit.js`의 shebang을 `#!/usr/bin/env -S node --disable-warning=ExperimentalWarning`으로 바꾼다. 테스트가 `node bin/twit.js`로 직접 실행하는 곳은 같은 플래그를 인자로 준다.
@@ -415,12 +423,13 @@ TWIT_HOME=/tmp/twit-demo twit contacts                                       # �
 ### 3단계: 일괄 읽기와 JSON 버전 2
 
 - `read.ts`, `mailbox.ts`: 여러 ID와 `--unread`, 트랜잭션 하나, 전부 아니면 전무.
-- `json.ts`: `schema_version` 2. 단건 `read` 응답을 `messages` 배열로 통일하고 기존 테스트의 참조를 고친다.
+- `json.ts`: 1단계에서 올린 `schema_version` 2 아래에서 단건 `read` 응답을 `messages` 배열로 통일하고 기존 테스트의 참조를 고친다.
 - 테스트: `read.test.ts`, `atomicity.test.ts`, `concurrency.test.ts` 추가 항목. 긴 본문 여러 건의 JSON이 파이프에서 온전한지 `persistence.test.ts`에 추가.
 
 ### 4단계: 가이드, 스킬, 연동 검증
 
 - 05 가이드 1·2·3·6·7장을 새 명령으로 고친다. 자기 이름 고르기 규칙, `--as`·`--from`·`--to`, `read --unread`, 회신 필요 여부 명시를 넣는다.
-- `~/.claude/skills/twit`의 드라이버와 설명이 새 명령을 쓰도록 고친다. 스킬은 저장소 밖이므로 변경 내용을 06 로그에 적는다.
+- 양쪽 스킬을 새 명령으로 고친다. Claude Code는 `~/.claude/skills/twit`(SKILL.md와 driver.mjs), Codex는 `~/.codex/skills/twit/SKILL.md`다. Codex 스킬의 교체안은 Codex가 작성해 [skill-proposals/codex-twit-SKILL-v2.md](./skill-proposals/codex-twit-SKILL-v2.md)에 보관했다. 스킬은 저장소 밖이므로 변경 내용을 06 로그에 적는다.
+- 실제 CLI 설치(`npm link`)와 양쪽 스킬 교체는 같은 시점에 한다. 어느 하나만 바꾸면 메일 왕복이 막힌다.
 - 06 로그에 2차 개선 절을 추가한다.
 - 사람이 두 세션에 각각 조회를 지시해 미리보기 확인 → 일괄 읽기 → 답장 → 보관 왕복을 한 차례 수행하고 05 가이드 10장에 기록한 뒤 03 문서 10장의 새 체크박스를 채운다.

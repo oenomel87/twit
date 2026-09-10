@@ -62,13 +62,13 @@ Codex: 구현 요청 전송
 ## 4. 참여자와 자기 이름
 
 ```sh
-export TWIT_CONTACTS="dane,claude-code,codex,opencode"   # 셸 설정에 한 번
+export TWIT_CONTACTS="dane,claude,codex,opencode,grok"   # 셸 설정에 한 번
 twit contacts
-twit inbox --as claude-code
-twit send --from claude-code --to codex --subject "..." --body-file request.md
+twit inbox --as claude
+twit send --from claude --to codex --subject "..." --body-file request.md
 ```
 
-- 주소록은 환경변수 `TWIT_CONTACTS`에 쉼표로 구분한 이름 목록이다. 셸 설정에 한 번 적으면 모든 프로젝트와 모든 에이전트가 같은 목록을 본다. 이름은 사람이 정한 단순한 발신·수신 이름이며 역할이나 세션 번호가 아니다.
+- 주소록은 환경변수 `TWIT_CONTACTS`에 쉼표로 구분한 이름 목록이다. 셸 설정에 적어 두면 그 셸에서 시작한 프로세스가 상속한다. 환경변수는 프로세스별로 상속되므로 이미 실행 중인 세션이나 다른 경로로 시작한 앱에는 자동으로 반영되지 않는다. 각 에이전트는 자기 실행 환경에서 `twit contacts --json`을 실행해 같은 목록이 나오는지 확인하고, 목록을 바꾼 뒤에는 해당 환경에서 다시 확인한다. 이름은 사람이 정한 단순한 발신·수신 이름이며 역할이나 세션 번호가 아니다.
 - 참여자 등록 명령과 참여자 저장 테이블은 두지 않는다. 주소록 편집은 환경변수 수정이 전부다. 표시 이름, 종류, 역할 같은 부가 정보도 두지 않는다.
 - `contacts`는 이 목록을 그대로 보여 준다.
 - 전송은 `--from`과 `--to`로 발신자와 수신자를 명시한다. 인박스·읽기·답장·대화·보낸함·보관은 `--as`로 누구의 것인지 명시한다. 자기 이름을 환경변수로 미리 정해 두는 방식은 두지 않는다.
