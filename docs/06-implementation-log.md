@@ -117,3 +117,41 @@ npm run build   # tsc 오류 없음
 | 불일치 | `body_length`가 UTF-16 코드 단위 수(이모지 2개 = 4) | 03 문서 5.5의 "문자 수"대로 코드 포인트 수로 계산(`[...body].length`). `thread --no-body` 텍스트 출력도 함께 수정 | 이모지 본문 `body_length: 2` 확인, 회귀 테스트 |
 | 불일치 | `read`·`archive`·`unarchive`의 UPDATE에서 나는 SQLite 오류가 내부 오류(1)로 나감 | 04 문서 7장의 규칙(SQLite 오류 → `STORAGE_ERROR`, 6)을 `withDb`에서 일원 적용. send/reply의 개별 래핑은 제거해 규칙을 한 곳에 둠 | receipts 갱신을 ABORT하는 트리거로 세 명령 모두 종료 코드 6 확인, 회귀 테스트 |
 | 불일치 | `thread`의 `participants`가 조회에 쓴 메시지의 발신자·수신자 순서를 따름 | 답장 ID로 조회하면 순서가 뒤집혔다. 대화의 최초 메시지(`rows[0]`) 기준으로 고정 | M-002(답장)로 조회해도 최초 메시지 순서 유지, 회귀 테스트 |
+
+## 6. 2차 개선 구현(2026-09-10)
+
+[07-first-use-review.md](./07-first-use-review.md)의 결정과 04 문서 13장의 계획에 따라 `opencode`가 구현했다. 사용자 정정(발신자·수신자를 사람이 지정한 단순한 이름으로 쓴다)이 설계의 출발점이다.
+
+### 1단계: Node 24, node:sqlite, 주소록과 이름 전환
+
+- `better-sqlite3`와 `@types/better-sqlite3`를 제거하고 Node 내장 `node:sqlite`(`DatabaseSync`)로 전환했다. 네이티브 바이너리가 사라져 fnm으로 Node 버전이 바뀌어도 재빌드가 필요 없다. `.node-version`은 24, `engines`는 `>=24`.
+- `db.ts`가 `immediate(fn)` 트랜잭션 도우미를 제공하고 `mailbox.ts`의 모든 쓰기가 이를 쓴다. SQLite 오류는 `code === 'ERR_SQLITE_ERROR'`로 판별해 `STORAGE_ERROR`로 바꾼다.
+- 진입점 shebang을 `#!/usr/bin/env -S node --disable-warning=ExperimentalWarning`으로 바꿔 `node:sqlite` 실험 경고만 끈다.
+- 주소록은 환경변수 `TWIT_CONTACTS`(쉼표 구분, 항목 앞뒤 공백 제거·빈 항목 버림). 형식(`^[a-z0-9][a-z0-9._-]{0,63}$`)·중복 검사를 거친다. 설정이 없으면 `contacts`를 포함한 모든 명령이 `ACTOR_NOT_CONFIGURED`에 설정 예시를 담아 거절한다.
+- `send`는 `--from`·`--to`(`--as`와 함께 주면 `VALIDATION_ERROR`), 그 외 명령은 `--as` 필수. 누락은 `ACTOR_NOT_CONFIGURED`(주소록 동봉), 주소록에 없는 이름은 `NOT_FOUND`(`details.contacts` 동봉).
+- `whoami`, `contacts add`, `--actor`, `TWIT_ACTOR`, `contacts` 테이블은 제거됐다. `contacts`는 주소록을 이름 배열로 돌려준다.
+- 마이그레이션 2: `foreign_keys=OFF` 선행 → `messages_new` 재생성·복사·이름 변경 → 인덱스 재생성 → `contacts` 삭제 → `foreign_key_check` 후 커밋, 실패 시 롤백, 성공·실패 모두 foreign_keys 복원. 적용 여부를 트랜잭션 안에서 다시 확인해 두 프로세스가 동시에 열어도 한쪽만 적용한다.
+- `schema_version`은 2. (응답 구조가 바뀌는 1단계에서 함께 올렸다.)
+
+### 2단계: 미리보기
+
+- `core/preview.ts`: 본문을 LF/CRLF로 나눠 공백이 아닌 첫 줄을 골라 앞뒤 공백을 제거하고, 코드 포인트 80개를 넘으면 80개 뒤에 `…`를 붙인다. 정확히 80개면 생략 부호가 없다.
+- `queries.ts`를 메타(`toMeta`)·목록(`toSummary` = 메타+preview)·본문(`toMessage` = 메타+body) 변환으로 분리했다. `preview`는 목록 세 곳(`inbox`, `sent`, `thread --no-body`)에만 있고 본문 응답에는 없다.
+- 목록 텍스트 출력은 항목당 두 줄이고 둘째 줄에 들여쓴 미리보기를 표시한다.
+
+### 3단계: 일괄 읽기
+
+- `read`가 ID 여러 개(지정 순서대로)와 `--unread`(보관하지 않은 미읽음을 `seq` 오름차순)를 지원한다. ID·`--unread` 동시 지정과 둘 다 없음, 같은 ID 중복은 `VALIDATION_ERROR`다.
+- 존재·권한 검사와 조건부 읽음 갱신 전체를 트랜잭션 하나로 묶어 부분 성공이 없다. 중간 UPDATE의 SQLite 오류도 전체 롤백 후 `STORAGE_ERROR`다.
+- `read` 응답은 단건·다건 모두 `data.messages` 배열이고 항목마다 `marked_read`가 붙는다.
+
+### 구현 중 특이 사항
+
+- `node:sqlite`로의 전환에서 `.all()`/`.get()`의 반환 타입(`Record<string, SQLOutputValue>`)이 프로젝션 타입과 직접 캐스팅되지 않아 `as unknown as`를 거쳤다. `run()`의 `changes`는 `number|bigint`라 `Number()`로 좁혔다.
+- 동시 시작 테스트가 드러낸 경쟁 문제를 두 가지 고쳤다. `busy_timeout`을 가장 먼저 설정해 열기 직후의 pragma 경합이 즉시 실패로 끝나지 않게 했고, 마이그레이션의 적용 여부 확인을 트랜잭션 안으로 옮겨 두 프로세스가 같은 마이그레이션을 경쟁 적용하지 않게 했다.
+- `PRAGMA foreign_key_check`는 `foreign_keys=OFF` 상태에서도 검사를 수행하므로 마이그레이션 2의 커밋 전 검증에 그대로 쓸 수 있었다.
+- `send --from/--to`와 `--as`의 이름 검증은 본문(표준 입력 포함) 로드보다 먼저 해 입력 오류가 stdin 대기에 가로막히지 않게 했다.
+
+### 테스트
+
+2차 개선 기준 테스트 99개(15개 파일) 통과. `migration.test.ts`가 마이그레이션 1 스키마 DB의 전환·보존·중간 실패 회복을, `preview.test.ts`가 미리보기 경계(선행 빈 줄·공백, 한 줄 본문, 79·80·81자, 한글·이모지, CRLF, Markdown 제목)를 검증한다.

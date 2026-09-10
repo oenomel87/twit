@@ -7,25 +7,49 @@ const GUIDE = readFileSync(
   fileURLToPath(new URL('../docs/05-agent-usage-guide.md', import.meta.url)),
   'utf8',
 )
+const ROOT_README = readFileSync(
+  fileURLToPath(new URL('../README.md', import.meta.url)),
+  'utf8',
+)
 
 describe('에이전트용 사용 가이드', () => {
-  it('설정 안내를 담는다', () => {
-    expect(GUIDE).toContain('TWIT_ACTOR')
-    expect(GUIDE).toContain('twit whoami')
-    expect(GUIDE).toContain('twit contacts')
+  it('설정과 주소록 안내를 담는다', () => {
+    expect(GUIDE).toContain('TWIT_CONTACTS')
+    expect(GUIDE).toContain('twit contacts --json')
+    // 환경변수는 프로세스별로 상속되므로 각 실행 환경에서 확인하는 절차
+    expect(GUIDE).toMatch(/프로세스별로 상속/)
+    expect(GUIDE).toMatch(/자기 실행 환경에서 `twit contacts --json`/)
     expect(GUIDE).toContain('ACTOR_NOT_CONFIGURED')
   })
 
+  it('자기 이름 고르기 규칙을 담는다', () => {
+    expect(GUIDE).toMatch(/제품명과 맞는 항목을 고른다/)
+    expect(GUIDE).toMatch(/둘 이상이면 사람에게 묻는다/)
+    expect(GUIDE).toMatch(/사람이 .* 이름을 지정하면 그것을 우선/)
+    expect(GUIDE).toMatch(/임의의 새 이름을 만들지 않는다/)
+  })
+
+  it('이름 지정 문법을 담는다', () => {
+    expect(GUIDE).toContain('--as <이름>')
+    expect(GUIDE).toContain('--from')
+    expect(GUIDE).toContain('--to')
+    expect(GUIDE).toContain('twit send --from')
+  })
+
   it('세션 규칙을 담는다', () => {
-    expect(GUIDE).toContain('twit inbox --json')
-    expect(GUIDE).toContain('twit inbox --unread')
+    expect(GUIDE).toContain('twit inbox --as <이름> --json')
+    expect(GUIDE).toContain('--unread')
     expect(GUIDE).toContain('twit read')
     expect(GUIDE).toContain('twit reply')
     expect(GUIDE).toContain('twit archive')
+    expect(GUIDE).toContain('twit read --unread --as <이름>')
     // 읽은 메시지도 기본 인박스에 포함된다는 안내
     expect(GUIDE).toMatch(/읽었지만 보관하지 않은 메시지도 포함/)
     // 보관은 완료가 아니다
     expect(GUIDE).toMatch(/보관.*(완료|수락).*해석하지 않/)
+    // 회신 필요 여부 명시
+    expect(GUIDE).toContain('회신 불필요')
+    expect(GUIDE).toContain('확인 답장 요청')
   })
 
   it('요청 작성 예시를 담는다', () => {
@@ -43,8 +67,9 @@ describe('에이전트용 사용 가이드', () => {
     expect(GUIDE).toMatch(/읽는 시점/)
   })
 
-  it('긴 대화 확인 안내를 담는다', () => {
+  it('긴 대화 확인과 일괄 읽기 주의를 담는다', () => {
     expect(GUIDE).toContain('twit thread M-001 --no-body')
+    expect(GUIDE).toMatch(/여러 건을 한 번에 읽으면 본문이 그만큼 출력/)
   })
 
   it('결과 답장 예시를 담는다', () => {
@@ -71,5 +96,11 @@ describe('에이전트용 사용 가이드', () => {
     expect(GUIDE).toContain('OpenCode')
     // 붙여 넣기용 절과 사람이 읽는 설명이 나뉜다
     expect(GUIDE).toContain('붙여 넣기용')
+  })
+
+  it('README에 Node 24 요구와 설치 절차를 담는다', () => {
+    expect(ROOT_README).toMatch(/Node\.js 24/)
+    expect(ROOT_README).toContain('npm install && npm run build && npm link')
+    expect(ROOT_README).toContain('TWIT_CONTACTS')
   })
 })
