@@ -72,6 +72,16 @@ describe('관찰자 조회', () => {
         read: false,
         archived: false,
       })
+      // 발신자 행: as-scoped toMeta면 null이 된다. 관찰자는 항상 boolean.
+      expect(viaOrigin?.messages[1]).toMatchObject({
+        sender: 'codex',
+        recipient: 'claude',
+        body: '알파 답장',
+        read: false,
+        archived: false,
+      })
+      expect(viaOrigin?.messages[1]?.read).toBe(false)
+      expect(viaOrigin?.messages[1]?.archived).toBe(false)
       expect(viaOrigin?.messages[0]).not.toHaveProperty('preview')
       expect(viaOrigin?.messages).toEqual(viaReply?.messages)
     } finally {
@@ -124,5 +134,18 @@ describe('관찰자 조회', () => {
     }
 
     expect(mid).not.toEqual(before)
+  })
+
+  it('archive 이후에도 archived는 boolean true다', async () => {
+    await seedTwoThreads()
+    expect((await run(['archive', 'M-001', '--as', 'codex', '--json'])).code).toBe(0)
+    const db = openTestDb()
+    try {
+      const msg = getThreadForUi(db, 'M-001')?.messages[0]
+      expect(msg?.archived).toBe(true)
+      expect(typeof msg?.archived).toBe('boolean')
+    } finally {
+      db.close()
+    }
   })
 })
