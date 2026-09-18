@@ -4,6 +4,7 @@ import { run, setup, testHome } from './helpers.js'
 import { getThreadForUi, listThreads } from '../src/core/queries.js'
 import { openDatabase } from '../src/store/db.js'
 import { resolveDbPath } from '../src/core/context.js'
+import { startUiServer, type UiServer } from '../src/ui/server.js'
 
 beforeEach(async () => {
   await setup()
@@ -22,6 +23,19 @@ async function seedTwoThreads(): Promise<void> {
 
 function openTestDb(): DatabaseSync {
   return openDatabase(resolveDbPath({ TWIT_HOME: testHome() }))
+}
+
+async function withServer(
+  fn: (server: UiServer, db: DatabaseSync) => Promise<void>,
+): Promise<void> {
+  const db = openTestDb()
+  const server = await startUiServer(db)
+  try {
+    await fn(server, db)
+  } finally {
+    await server.close()
+    db.close()
+  }
 }
 
 describe('관찰자 조회', () => {
@@ -147,5 +161,66 @@ describe('관찰자 조회', () => {
     } finally {
       db.close()
     }
+  })
+})
+
+describe('UI HTTP', () => {
+  it('GET /api/threads가 마지막 seq 역순 목록을 돌려준다', async () => {
+    await seedTwoThreads()
+    await withServer(async (server) => {
+      const res = await fetch(`${server.url}/api/threads`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toMatch(/application\/json/)
+      const body = (await res.json()) as { threads: { thread_id: string; body?: string }[] }
+      expect(body.threads.map((t) => t.thread_id)).toEqual(['M-003', 'M-001'])
+      expect(body.threads[0]).not.toHaveProperty('body')
+    })
+  })
+
+  it('GET /api/threads/:id 는 대화 ID와 답장 ID가 같다', async () => {
+    await seedTwoThreads()
+    await withServer(async (server) => {
+      const a = await fetch(`${server.url}/api/threads/M-001`)
+      const b = await fetch(`${server.url}/api/threads/M-002`)
+      expect(a.status).toBe(200)
+      const da = (await a.json()) as { thread_id: string; messages: { id: string; body: string }[] }
+      const detailB = (await b.json()) as { thread_id: string; messages: { id: string }[] }
+      expect(da.thread_id).toBe('M-001')
+      expect(da.messages.map((m) => m.id)).toEqual(['M-001', 'M-002'])
+      expect(da.messages[0].body).toBe('알파 본문')
+      expect(detailB.messages.map((m) => m.id)).toEqual(da.messages.map((m) => m.id))
+    })
+  })
+
+  it('없는 대화는 404, POST는 405다', async () => {
+    await seedTwoThreads()
+    await withServer(async (server) => {
+      const missing = await fetch(`${server.url}/api/threads/M-999`)
+      expect(missing.status).toBe(404)
+      expect(await missing.json()).toEqual({ error: 'NOT_FOUND' })
+
+      const posted = await fetch(`${server.url}/api/threads`, { method: 'POST' })
+      expect(posted.status).toBe(405)
+      expect(await posted.json()).toEqual({ error: 'METHOD_NOT_ALLOWED' })
+    })
+  })
+
+  it('GET만으로는 receipts가 바뀌지 않는다', async () => {
+    await seedTwoThreads()
+    await withServer(async (server, db) => {
+      const snap = () =>
+        db.prepare('SELECT message_id, read_at, archived FROM receipts ORDER BY message_id').all()
+      const before = snap()
+      await fetch(`${server.url}/api/threads`)
+      await fetch(`${server.url}/api/threads/M-001`)
+      expect(snap()).toEqual(before)
+    })
+  })
+
+  it('127.0.0.1에만 붙는다', async () => {
+    await withServer(async (server) => {
+      expect(server.url.startsWith('http://127.0.0.1:')).toBe(true)
+      expect(typeof server.port).toBe('number')
+    })
   })
 })
