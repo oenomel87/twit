@@ -103,4 +103,10 @@ describe('에이전트용 사용 가이드', () => {
     expect(ROOT_README).toContain('npm install && npm run build && npm link')
     expect(ROOT_README).toContain('TWIT_CONTACTS')
   })
+
+  it('사람은 twit ui로 전체를 보고 에이전트는 쓰지 않는다고 안내한다', () => {
+    expect(GUIDE).toContain('twit ui')
+    expect(GUIDE).toMatch(/에이전트는.*쓰지/)
+    expect(ROOT_README).toContain('twit ui')
+  })
 })

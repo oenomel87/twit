@@ -44,6 +44,7 @@ twit reply M-001 --as <이름> --body "답장"
 twit thread M-001 --as <이름>       # 대화 전체 (--no-body: 길이·미리보기만)
 twit archive M-001 --as <이름>      # 보관 (unarchive로 복원)
 twit sent --as <이름>               # 보낸 메시지
+twit ui                         # 전체 대화를 읽기 전용으로 브라우저에 연다
 ```
 
 모든 명령은 `--json`을 지원하며 `schema_version: 2`의 공통 봉투로 응답한다.

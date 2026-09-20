@@ -12,7 +12,7 @@
 | SQLite 드라이버 | Node 내장 `node:sqlite`(`DatabaseSync`). 1차 구현의 `better-sqlite3`는 네이티브 바이너리가 Node 주 버전에 묶여 fnm으로 버전이 바뀔 때마다 재빌드가 필요했고, 실제로 다른 에이전트가 다른 Node로 빌드해 CLI가 열리지 않는 일이 있었다. `node:sqlite`는 24.x에서 아직 실험 기능 경고를 내므로 진입점에서 그 경고만 끈다. API가 바뀌면 `store/db.ts` 한 곳만 고친다 |
 | DB 위치 | `$TWIT_HOME/twit.db`, 기본 `~/.twit/twit.db`. 디렉터리가 없으면 첫 실행 시 생성 |
 | 주소록 | 환경변수 `TWIT_CONTACTS`의 쉼표 구분 이름 목록. DB에 참여자를 저장하지 않는다 |
-| 이름 지정 | `send`는 `--from`·`--to`, 그 외 명령은 전역 옵션 `--as`. 자기 이름 환경변수는 두지 않는다 |
+| 이름 지정 | `send`는 `--from`·`--to`, `contacts`와 `ui`는 `--as` 없음, 그 외 명령은 전역 옵션 `--as`. 자기 이름 환경변수는 두지 않는다 |
 | Node 버전 | `.node-version`으로 24 고정, `engines`는 `>=24`. 네이티브 모듈이 없으므로 버전을 바꿔도 재빌드는 없다 |
 | JSON 봉투 | `schema_version: 2`. 1과의 차이는 5장 참조 |
 | CLI 파서 | `commander` |
@@ -42,6 +42,7 @@ twit/
       thread.ts             thread
       sent.ts               sent
       archive.ts            archive, unarchive
+      ui.ts                 ui (읽기 전용 관찰 화면)
     core/
       errors.ts             TwitError, 오류 코드, 종료 코드 표
       context.ts            주소록 해석, --as/--from/--to 이름 검증, DB 열기
@@ -56,6 +57,10 @@ twit/
     output/
       json.ts               봉투 출력
       text.ts               표·상세 렌더링
+    ui/
+      server.ts             로컬 HTTP GET 서버 (127.0.0.1)
+      page.ts               HTML 페이지 문자열
+      open.ts               기본 브라우저 열기. src에서 child_process를 쓰는 유일한 파일
   docs/
     05-agent-usage-guide.md 에이전트용 사용 가이드
   test/
@@ -63,7 +68,7 @@ twit/
     *.test.ts
 ```
 
-파일 시스템 접근은 `body.ts`의 `--body-file` 읽기와 `db.ts`의 DB 파일 열기 두 곳뿐이다. 이 제약은 테스트로 고정한다.
+파일 시스템 접근은 `body.ts`의 `--body-file` 읽기와 `db.ts`의 DB 파일 열기 두 곳뿐이다. `child_process`는 `ui/open.ts`만 사용한다. 이 제약은 테스트로 고정한다.
 
 ## 3. 스키마
 
@@ -125,17 +130,17 @@ twit inbox --as claude
 twit send --from claude --to codex --subject "..." --body-file request.md
 ```
 
-- 주소록 해석: `TWIT_CONTACTS`를 쉼표로 나누고 각 항목의 앞뒤 공백을 제거하며 빈 항목은 버린다. 환경변수가 없거나 결과가 비어 있으면 `ACTOR_NOT_CONFIGURED`로 거절하고 설정 예시를 안내한다. `contacts`도 이때는 빈 목록 대신 같은 오류를 낸다. 설정이 없다는 사실을 숨기지 않기 위해서다.
+- 주소록 해석: `TWIT_CONTACTS`를 쉼표로 나누고 각 항목의 앞뒤 공백을 제거하며 빈 항목은 버린다. 환경변수가 없거나 결과가 비어 있으면 `ACTOR_NOT_CONFIGURED`로 거절하고 설정 예시를 안내한다. `contacts`도 이때는 빈 목록 대신 같은 오류를 낸다. 설정이 없다는 사실을 숨기지 않기 위해서다. `ui`는 주소록이 없어도 된다.
 - 이름 형식은 `^[a-z0-9][a-z0-9._-]{0,63}$`이다. 형식에 맞지 않거나 중복된 항목이 목록에 있으면 `VALIDATION_ERROR`로 거절하고 어느 항목인지 알려 준다.
-- `--as`: `contacts`를 제외한 모든 명령에 필수인 전역 옵션이다. `send`는 `--as` 대신 `--from`을 받으며 둘을 함께 주면 `VALIDATION_ERROR`다. `--as`가 없으면 `ACTOR_NOT_CONFIGURED`이며 메시지에 "자기 이름을 `--as <이름>`으로 지정하세요"와 현재 주소록을 담는다.
+- `--as`: `contacts`와 `ui`를 제외한 모든 명령에 필수인 전역 옵션이다. `send`는 `--as` 대신 `--from`을 받으며 둘을 함께 주면 `VALIDATION_ERROR`다. `ui`에 `--as`를 붙이면 `VALIDATION_ERROR`다. `--as`가 없으면 `ACTOR_NOT_CONFIGURED`이며 메시지에 "자기 이름을 `--as <이름>`으로 지정하세요"와 현재 주소록을 담는다. `ui`는 `TWIT_CONTACTS`가 없어도 된다.
 - `--from`, `--to`: `send`에 필수다.
 - `--as`, `--from`, `--to`의 값이 주소록에 없으면 `NOT_FOUND`로 거절하고 현재 주소록을 `details.contacts`에 담는다.
 - 자기 이름 환경변수(`TWIT_ACTOR`)와 참여자 등록 명령, `whoami`는 없앤다. 1차 구현의 `--actor`는 `--as`로 이름을 바꾼다.
-- `contacts`는 주소록을 순서대로 보여 준다. `--as` 없이 실행할 수 있는 유일한 명령이다. 에이전트가 자기 이름을 고르기 전에 호출하기 때문이다.
+- `contacts`는 주소록을 순서대로 보여 준다. `--as` 없이 실행할 수 있는 명령은 `contacts`와 `ui`다. `contacts`는 에이전트가 자기 이름을 고르기 전에 호출하기 때문이다.
 
 ## 5. 명령과 JSON 구조
 
-전역 옵션: `--json`, `--as <이름>`(`contacts`와 `send`는 받지 않는다). 모든 성공 응답은 아래 봉투를 따른다.
+전역 옵션: `--json`, `--as <이름>`(`contacts`와 `send`, `ui`는 받지 않는다). 모든 성공 응답은 아래 봉투를 따른다.
 
 ```json
 { "schema_version": 2, "ok": true, "data": { }, "error": null }
@@ -308,7 +313,7 @@ twit send --from claude --to codex --subject "..." --body-file request.md
 | `--body-file` 본문이 원본 파일 변경 후에도 유지 | `send.test.ts` |
 | 경로가 포함된 메시지 읽기가 파일을 열지 않음 | `fs-boundary.test.ts` (`fs` 사용처가 `body.ts`, `db.ts`뿐임을 소스 검사) |
 | 사용 가이드에 전달 예시와 시점 차이 안내 | `docs.test.ts` (05 문서에 필수 문구 존재 확인) |
-| 전송·답장으로 프로세스 미실행 | `fs-boundary.test.ts` (`child_process` 사용처가 테스트 외에 없음) |
+| 전송·답장으로 프로세스 미실행 | `fs-boundary.test.ts` (`child_process` 사용처가 `ui/open.ts`와 테스트 외에 없음) |
 | 실제 두 CLI 에이전트가 요청→질문→답변→결과 수행 | 수동 검증. 결과를 05 문서 끝에 기록 |
 
 ## 11. 1차 구현 실행 계획 (완료된 과거 기록)
