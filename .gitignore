@@ -3,3 +3,6 @@ dist/
 *.tsbuildinfo
 *.log
 .worktrees/
+.superpowers/
+.DS_Store
+coverage/
