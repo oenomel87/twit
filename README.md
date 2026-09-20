@@ -28,7 +28,7 @@ twit send --from dane --to claude --subject "환영" --body "첫 메시지"
 twit inbox --as claude
 ```
 
-- 발신자·수신자는 명령마다 이름으로 지정한다. `send`는 `--from`·`--to`, 그 외 명령은 `--as`다.
+- 발신자·수신자는 명령마다 이름으로 지정한다. `send`는 `--from`·`--to`, `contacts`와 `ui`는 `--as`가 없고, 나머지 메일함 명령은 `--as`다.
 - 에이전트는 주소록에서 자기 제품명과 맞는 이름을 고른다. 없거나 둘 이상이면 사람에게 묻는다.
 
 자세한 사용 관례는 [docs/05-agent-usage-guide.md](./docs/05-agent-usage-guide.md)를,

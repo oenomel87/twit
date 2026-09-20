@@ -132,7 +132,7 @@ twit send --from claude --to codex --subject "..." --body-file request.md
 
 - 주소록 해석: `TWIT_CONTACTS`를 쉼표로 나누고 각 항목의 앞뒤 공백을 제거하며 빈 항목은 버린다. 환경변수가 없거나 결과가 비어 있으면 `ACTOR_NOT_CONFIGURED`로 거절하고 설정 예시를 안내한다. `contacts`도 이때는 빈 목록 대신 같은 오류를 낸다. 설정이 없다는 사실을 숨기지 않기 위해서다. `ui`는 주소록이 없어도 된다.
 - 이름 형식은 `^[a-z0-9][a-z0-9._-]{0,63}$`이다. 형식에 맞지 않거나 중복된 항목이 목록에 있으면 `VALIDATION_ERROR`로 거절하고 어느 항목인지 알려 준다.
-- `--as`: `contacts`와 `ui`를 제외한 모든 명령에 필수인 전역 옵션이다. `send`는 `--as` 대신 `--from`을 받으며 둘을 함께 주면 `VALIDATION_ERROR`다. `ui`에 `--as`를 붙이면 `VALIDATION_ERROR`다. `--as`가 없으면 `ACTOR_NOT_CONFIGURED`이며 메시지에 "자기 이름을 `--as <이름>`으로 지정하세요"와 현재 주소록을 담는다. `ui`는 `TWIT_CONTACTS`가 없어도 된다.
+- `--as`: `contacts`와 `ui`를 제외한 모든 명령에 필수인 전역 옵션이다. `send`는 `--as` 대신 `--from`을 받으며 둘을 함께 주면 `VALIDATION_ERROR`다. `ui`에 `--as`를 붙이면 `VALIDATION_ERROR`다. `contacts`·`send`·`ui`가 아닌 명령에서 `--as`가 없으면 `ACTOR_NOT_CONFIGURED`이며 메시지에 "자기 이름을 `--as <이름>`으로 지정하세요"와 현재 주소록을 담는다. `ui`는 `TWIT_CONTACTS`가 없어도 된다.
 - `--from`, `--to`: `send`에 필수다.
 - `--as`, `--from`, `--to`의 값이 주소록에 없으면 `NOT_FOUND`로 거절하고 현재 주소록을 `details.contacts`에 담는다.
 - 자기 이름 환경변수(`TWIT_ACTOR`)와 참여자 등록 명령, `whoami`는 없앤다. 1차 구현의 `--actor`는 `--as`로 이름을 바꾼다.
@@ -180,6 +180,7 @@ twit send --from claude --to codex --subject "..." --body-file request.md
 | `sent` | `--as` | `{ "messages": [MessageSummary] }` 최신순, `read`·`archived`는 `null` |
 | `archive <id>` | `--as` | `{ "id", "archived": true }` |
 | `unarchive <id>` | `--as` | `{ "id", "archived": false }` |
+| `ui` | `--as` 불가. `TWIT_CONTACTS` 불필요 | `{ "url", "port" }` 출력 후 프로세스 대기 |
 
 `marked_read`는 이번 호출로 읽음이 새로 기록되었을 때만 `true`다. `replayed`는 요청 키 재전송으로 기존 메시지를 돌려줄 때 `true`다. `read`는 단건도 `messages` 배열 한 개로 돌려준다.
 
