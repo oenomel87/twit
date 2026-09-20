@@ -223,4 +223,16 @@ describe('UI HTTP', () => {
       expect(typeof server.port).toBe('number')
     })
   })
+
+  it('잘못된 percent-encoding은 404이고 프로세스를 죽이지 않는다', async () => {
+    await withServer(async (server) => {
+      const bad = await fetch(`${server.url}/api/threads/%`)
+      expect(bad.status).toBe(404)
+      expect(await bad.json()).toEqual({ error: 'NOT_FOUND' })
+
+      const incomplete = await fetch(`${server.url}/api/threads/%E0%A4%A`)
+      expect(incomplete.status).toBe(404)
+      expect(await incomplete.json()).toEqual({ error: 'NOT_FOUND' })
+    })
+  })
 })

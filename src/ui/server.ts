@@ -55,7 +55,16 @@ function handle(db: DatabaseSync, req: IncomingMessage, res: ServerResponse): vo
 
 export function startUiServer(db: DatabaseSync): Promise<UiServer> {
   const server = createServer((req, res) => {
-    handle(db, req, res)
+    try {
+      handle(db, req, res)
+    } catch (err) {
+      if (res.headersSent) return
+      if (err instanceof URIError) {
+        sendJson(res, 404, { error: 'NOT_FOUND' })
+        return
+      }
+      sendJson(res, 500, { error: 'INTERNAL' })
+    }
   })
   return new Promise((resolve, reject) => {
     const onError = (err: Error) => {
