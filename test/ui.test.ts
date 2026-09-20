@@ -1,10 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { run, setup, testHome } from './helpers.js'
+import { CONTACTS, run, setup, testHome } from './helpers.js'
 import { getThreadForUi, listThreads } from '../src/core/queries.js'
 import { openDatabase } from '../src/store/db.js'
 import { resolveDbPath } from '../src/core/context.js'
 import { startUiServer, type UiServer } from '../src/ui/server.js'
+import { runUi } from '../src/commands/ui.js'
 
 beforeEach(async () => {
   await setup()
@@ -256,5 +257,59 @@ describe('UI 페이지', () => {
       expect(html).toContain('id="thread-messages"')
       expect(html).toMatch(/white-space:\s*pre-wrap/)
     })
+  })
+})
+
+function makeIo(contacts: string | null = CONTACTS) {
+  const out: string[] = []
+  const err: string[] = []
+  return {
+    io: {
+      stdout: (text: string) => out.push(text),
+      stderr: (text: string) => err.push(text),
+      env: {
+        TWIT_HOME: testHome(),
+        ...(contacts === null ? {} : { TWIT_CONTACTS: contacts }),
+      },
+    },
+    out,
+    err,
+  }
+}
+
+describe('twit ui 명령', () => {
+  it('--as 가 있으면 VALIDATION_ERROR 이고 서버를 열지 않는다', async () => {
+    const r = await run(['ui', '--as', 'dane', '--json'])
+    expect(r.code).toBe(2)
+    expect(r.json?.error?.code).toBe('VALIDATION_ERROR')
+    expect(r.json?.error?.message).toMatch(/--as/)
+  })
+
+  it('주소록 없이 ui를 연다', async () => {
+    await seedTwoThreads()
+    const { io, out } = makeIo(null)
+    let url = ''
+    await runUi(io, { json: true }, {
+      openUrl: () => {},
+      waitUntilDone: async () => {
+        url = (JSON.parse(out.join('')) as { data: { url: string } }).data.url
+        const res = await fetch(`${url}/api/threads`)
+        expect(res.status).toBe(200)
+        expect(((await res.json()) as { threads: unknown[] }).threads).toHaveLength(2)
+      },
+    })
+    expect(url.startsWith('http://127.0.0.1:')).toBe(true)
+  })
+
+  it('브라우저 열기 실패는 stderr에 남기고 서버는 유지한다', async () => {
+    await seedTwoThreads()
+    const { io, err } = makeIo()
+    await runUi(io, { json: true }, {
+      openUrl: () => {
+        throw new Error('no browser')
+      },
+      waitUntilDone: async () => {},
+    })
+    expect(err.join('')).toMatch(/warning: 브라우저/)
   })
 })
