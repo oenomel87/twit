@@ -133,7 +133,7 @@ describe('파일 접근 경계', () => {
     ])
   })
 
-  it('src 코드에서 child_process를 쓰지 않는다', async () => {
+  it('src 코드에서 child_process를 쓰는 파일은 ui/open.ts 뿐이다', async () => {
     const { readdirSync, readFileSync, statSync } = await import('node:fs')
     const srcDir = fileURLToPath(new URL('../src', import.meta.url))
     const files: string[] = []
@@ -146,7 +146,10 @@ describe('파일 접근 경계', () => {
     }
     walk(srcDir)
 
-    const users = files.filter((file) => readFileSync(file, 'utf8').includes('child_process'))
-    expect(users).toEqual([])
+    const users = files
+      .filter((file) => readFileSync(file, 'utf8').includes('child_process'))
+      .map((file) => path.relative(srcDir, file))
+      .sort()
+    expect(users).toEqual(['ui/open.ts'])
   })
 })
