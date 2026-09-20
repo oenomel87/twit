@@ -236,3 +236,25 @@ describe('UI HTTP', () => {
     })
   })
 })
+
+describe('UI 페이지', () => {
+  it('GET / 은 HTML이고 메시지 필드를 innerHTML에 넣지 않는다', async () => {
+    await withServer(async (server) => {
+      const res = await fetch(server.url + '/')
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toMatch(/text\/html/)
+      const html = await res.text()
+      expect(html).toContain('textContent')
+      expect(html).not.toMatch(/innerHTML\s*=/)
+      expect(html).not.toContain('insertAdjacentHTML')
+      expect(html).toContain('새로고침')
+      expect(html).toContain('id="thread-list"')
+      expect(html).toContain('id="thread-view"')
+      expect(html).toContain('id="refresh"')
+      expect(html).toContain('id="thread-count"')
+      expect(html).toContain('id="thread-header"')
+      expect(html).toContain('id="thread-messages"')
+      expect(html).toMatch(/white-space:\s*pre-wrap/)
+    })
+  })
+})
